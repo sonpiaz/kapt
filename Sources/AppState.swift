@@ -55,16 +55,16 @@ final class AppState {
     func startCapture(mode: CaptureMode) {
         snapLog("startCapture called with mode: \(mode)")
         guard !isCapturing else {
-            snapLog("Already capturing, ignoring")
+            snapLog("Already capturing, ignoring startCapture(\(mode))")
             return
         }
+        isCapturing = true  // Set immediately to prevent race conditions
         thumbnailPanel.dismiss()
 
         // Activate app so region overlay can become key
         NSApp.activate(ignoringOtherApps: true)
 
         Task {
-            isCapturing = true
             defer {
                 isCapturing = false
                 snapLog("isCapturing reset to false")
@@ -137,9 +137,9 @@ final class AppState {
         let targetScreen = captureEngine.resolveScreen(for: displayTarget)
         defer { cleanupRegionWindow() }
 
-        // Step 1: Select region (reuse existing selection UI)
+        // Step 1: Select region (reuse existing selection UI with scrolling label)
         let rect: CGRect = try await withCheckedThrowingContinuation { continuation in
-            let window = RegionSelectionWindow(screen: targetScreen) { rect in
+            let window = RegionSelectionWindow(screen: targetScreen, mode: .scrolling) { rect in
                 snapLog("captureScrolling: selection done, rect=\(rect)")
                 continuation.resume(returning: rect)
             } onCancel: {

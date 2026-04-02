@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RegionSelectionView: View {
     let screenFrame: CGRect
+    var mode: CaptureMode = .region
     let onSelect: (CGRect) -> Void
     let onCancel: () -> Void
 
@@ -53,9 +54,9 @@ struct RegionSelectionView: View {
             if dragStart == nil {
                 VStack {
                     HStack(spacing: 6) {
-                        Image(systemName: "viewfinder")
+                        Image(systemName: mode == .scrolling ? "arrow.down.doc" : "viewfinder")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Drag to select")
+                        Text(mode == .scrolling ? "Select scrolling area" : "Drag to select")
                             .font(.system(size: 13, weight: .medium))
                         Text("·")
                             .foregroundStyle(.white.opacity(0.5))

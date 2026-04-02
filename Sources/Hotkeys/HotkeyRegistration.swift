@@ -7,15 +7,15 @@ enum HotkeyRegistration {
         print("Registering hotkeys...")
 
         KeyboardShortcuts.onKeyUp(for: .captureFullscreen) { [weak appState] in
-            print("Hotkey: captureFullscreen triggered")
+            snapLog("Hotkey: captureFullscreen triggered")
             appState?.startCapture(mode: .fullscreen)
         }
         KeyboardShortcuts.onKeyUp(for: .captureRegion) { [weak appState] in
-            print("Hotkey: captureRegion triggered")
+            snapLog("Hotkey: captureRegion triggered")
             appState?.startCapture(mode: .region)
         }
         KeyboardShortcuts.onKeyUp(for: .captureScrolling) { [weak appState] in
-            print("Hotkey: captureScrolling triggered")
+            snapLog("Hotkey: captureScrolling triggered")
             appState?.startCapture(mode: .scrolling)
         }
         print("Hotkeys registered successfully")
