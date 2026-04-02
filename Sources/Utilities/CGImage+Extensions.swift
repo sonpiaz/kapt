@@ -16,7 +16,7 @@ extension CGImage {
     /// Save as PNG to a file URL
     func savePNG(to url: URL) throws {
         guard let data = pngData else {
-            throw SnapXError.exportFailed
+            throw KaptError.exportFailed
         }
         try data.write(to: url)
     }
@@ -29,7 +29,7 @@ extension CGImage {
     }
 }
 
-enum SnapXError: LocalizedError {
+enum KaptError: LocalizedError {
     case capturePermissionDenied
     case captureFailed
     case exportFailed

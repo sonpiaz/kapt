@@ -9,7 +9,7 @@ final class CaptureEngine {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 
         guard let display = content.displays.first else {
-            throw SnapXError.noDisplayFound
+            throw KaptError.noDisplayFound
         }
 
         let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
@@ -46,7 +46,7 @@ final class CaptureEngine {
         )
 
         guard let cropped = fullImage.cropping(to: imageRect) else {
-            throw SnapXError.captureFailed
+            throw KaptError.captureFailed
         }
         return cropped
     }

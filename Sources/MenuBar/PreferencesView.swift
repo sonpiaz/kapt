@@ -1,5 +1,6 @@
 import SwiftUI
 import KeyboardShortcuts
+import ServiceManagement
 
 struct PreferencesView: View {
     @AppStorage("saveLocation") private var saveLocation = "Desktop"
@@ -7,6 +8,8 @@ struct PreferencesView: View {
     @AppStorage("autoCopy") private var autoCopy = true
     @AppStorage("showQuickAccess") private var showQuickAccess = true
     @AppStorage("captureSound") private var captureSound = true
+
+    @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
 
     var body: some View {
         TabView {
@@ -37,6 +40,22 @@ struct PreferencesView: View {
                     Text("Downloads").tag("Downloads")
                     Text("Documents").tag("Documents")
                 }
+            }
+
+            Section("System") {
+                Toggle("Launch at Login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _, enabled in
+                        do {
+                            if enabled {
+                                try SMAppService.mainApp.register()
+                            } else {
+                                try SMAppService.mainApp.unregister()
+                            }
+                        } catch {
+                            // Revert the toggle on failure
+                            launchAtLogin = SMAppService.mainApp.status == .enabled
+                        }
+                    }
             }
         }
         .formStyle(.grouped)

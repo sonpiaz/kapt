@@ -3,14 +3,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "SnapX",
+    name: "Kapt",
     platforms: [.macOS(.v15)],
     dependencies: [
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "2.0.0"),
     ],
     targets: [
         .executableTarget(
-            name: "SnapX",
+            name: "Kapt",
             dependencies: ["KeyboardShortcuts"],
             path: "Sources",
             resources: [

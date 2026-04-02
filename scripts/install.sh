@@ -17,7 +17,17 @@ rm -rf "$APP_DIR"
 mkdir -p "$MACOS" "$RESOURCES"
 
 # Copy binary
-cp .build/release/SnapX "$MACOS/$APP_NAME"
+cp .build/release/Kapt "$MACOS/$APP_NAME"
+
+# Copy app icon
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ICON_SRC="$SCRIPT_DIR/../Resources/AppIcon.icns"
+if [ -f "$ICON_SRC" ]; then
+    cp "$ICON_SRC" "$RESOURCES/AppIcon.icns"
+    echo "✓ App icon copied"
+else
+    echo "⚠  AppIcon.icns not found at $ICON_SRC — run scripts/generate_icon.py to create it"
+fi
 
 # Info.plist — LSUIElement so no Dock icon
 cat > "$CONTENTS/Info.plist" << 'PLIST'
@@ -37,6 +47,8 @@ cat > "$CONTENTS/Info.plist" << 'PLIST'
     <string>1.0.0</string>
     <key>CFBundleExecutable</key>
     <string>Kapt</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSUIElement</key>

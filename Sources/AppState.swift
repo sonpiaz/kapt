@@ -3,7 +3,7 @@ import ScreenCaptureKit
 import AppKit
 func snapLog(_ msg: String) {
     let line = "[\(Date())] \(msg)\n"
-    let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/snapx-debug.log")
+    let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/kapt-debug.log")
     if let handle = try? FileHandle(forWritingTo: url) {
         handle.seekToEndOfFile()
         handle.write(line.data(using: .utf8)!)
@@ -141,7 +141,7 @@ final class AppState {
             backing: .buffered,
             defer: false
         )
-        panel.title = "SnapX — Annotate"
+        panel.title = "Kapt — Annotate"
         panel.level = .floating
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false

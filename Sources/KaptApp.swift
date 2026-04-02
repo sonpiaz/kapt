@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 @main
-struct SnapXApp: App {
+struct KaptApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
@@ -52,7 +52,7 @@ struct PopoverMenuView: View {
 
             Divider()
 
-            menuButton("Quit SnapX") {
+            menuButton("Quit Kapt") {
                 NSApp.terminate(nil)
             }
         }
@@ -144,7 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "SnapX")
+            button.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Kapt")
             button.action = #selector(togglePopover)
             button.target = self
         }
@@ -193,7 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "SnapX Preferences"
+        window.title = "Kapt Preferences"
         window.contentView = NSHostingView(rootView: PreferencesView())
         window.center()
         window.isReleasedWhenClosed = false
