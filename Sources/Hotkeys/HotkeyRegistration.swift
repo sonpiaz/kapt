@@ -14,6 +14,10 @@ enum HotkeyRegistration {
             print("Hotkey: captureRegion triggered")
             appState?.startCapture(mode: .region)
         }
+        KeyboardShortcuts.onKeyUp(for: .captureScrolling) { [weak appState] in
+            print("Hotkey: captureScrolling triggered")
+            appState?.startCapture(mode: .scrolling)
+        }
         print("Hotkeys registered successfully")
     }
 }

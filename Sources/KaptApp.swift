@@ -46,6 +46,12 @@ struct PopoverMenuView: View {
                     appState.startCapture(mode: .region)
                 }
             }
+            menuButton("Scrolling Capture", icon: "arrow.down.doc") {
+                dismissAction()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    appState.startCapture(mode: .scrolling)
+                }
+            }
 
             Divider().padding(.horizontal, 4)
 
@@ -145,10 +151,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var popover: NSPopover!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Must set activation policy in code — Info.plist is NOT loaded
-        // when running as a bare CLI binary (not .app bundle).
-        // .accessory = can show windows + receive keyboard, no Dock icon.
         NSApp.setActivationPolicy(.accessory)
+        AppState.registerDefaults()
 
         snapLog("App launched")
         let hasPerm = Permissions.hasScreenRecordingPermission()

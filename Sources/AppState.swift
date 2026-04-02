@@ -16,6 +16,7 @@ func snapLog(_ msg: String) {
 enum CaptureMode {
     case fullscreen
     case region
+    case scrolling
 }
 
 @MainActor
@@ -30,6 +31,24 @@ final class AppState {
     let captureEngine = CaptureEngine()
     private var thumbnailPanel = ThumbnailPanel()
     private var regionSelectionWindow: RegionSelectionWindow?
+    private var scrollingController: ScrollingCaptureController?
+    private var scrollingHUD: ScrollingCaptureHUD?
+
+    static func registerDefaults() {
+        UserDefaults.standard.register(defaults: [
+            "autoCopy": true,
+            "saveLocation": "Desktop",
+            "displayTarget": "active",
+            "scrollSpeed": 3,
+            "scrollMaxHeight": 20000,
+        ])
+    }
+
+    /// Which display to capture (read from UserDefaults)
+    var displayTarget: DisplayTarget {
+        let raw = UserDefaults.standard.string(forKey: "displayTarget") ?? "active"
+        return DisplayTarget(rawValue: raw) ?? .activeScreen
+    }
 
     // MARK: - Capture Actions
 
@@ -55,16 +74,19 @@ final class AppState {
                 snapLog("Starting \(mode) capture...")
                 switch mode {
                 case .fullscreen:
-                    capturedImage = try await captureEngine.captureFullscreen()
+                    capturedImage = try await captureEngine.captureFullscreen(target: displayTarget)
                 case .region:
                     capturedImage = try await captureRegion()
+                case .scrolling:
+                    capturedImage = try await captureScrolling()
                 }
 
                 if let image = capturedImage {
                     snapLog("Capture success: \(image.width)x\(image.height)")
                     let savedURL = saveToDesktop(image)
-                    image.copyToClipboard()
-                    snapLog("Saved and copied to clipboard")
+                    let autoCopy = UserDefaults.standard.bool(forKey: "autoCopy")
+                    if autoCopy { image.copyToClipboard() }
+                    snapLog("Saved\(autoCopy ? " and copied to clipboard" : "")")
                     showThumbnail(for: image, fileURL: savedURL)
                 } else {
                     snapLog("Capture returned nil image")
@@ -83,9 +105,10 @@ final class AppState {
 
     private func captureRegion() async throws -> CGImage {
         snapLog("captureRegion: creating selection window")
+        let targetScreen = captureEngine.resolveScreen(for: displayTarget)
         defer { cleanupRegionWindow() }
         let rect: CGRect = try await withCheckedThrowingContinuation { continuation in
-            let window = RegionSelectionWindow { rect in
+            let window = RegionSelectionWindow(screen: targetScreen) { rect in
                 snapLog("captureRegion: selection done, rect=\(rect)")
                 continuation.resume(returning: rect)
             } onCancel: {
@@ -97,7 +120,7 @@ final class AppState {
             snapLog("captureRegion: window.beginSelection() called")
         }
         snapLog("captureRegion: capturing rect")
-        let image = try await captureEngine.captureRegion(rect)
+        let image = try await captureEngine.captureRegion(rect, on: targetScreen)
         snapLog("captureRegion: crop success \(image.width)x\(image.height)")
         return image
     }
@@ -105,6 +128,99 @@ final class AppState {
     private func cleanupRegionWindow() {
         regionSelectionWindow?.orderOut(nil)
         regionSelectionWindow = nil
+    }
+
+    // MARK: - Scrolling Capture
+
+    private func captureScrolling() async throws -> CGImage {
+        snapLog("captureScrolling: starting region selection")
+        let targetScreen = captureEngine.resolveScreen(for: displayTarget)
+        defer { cleanupRegionWindow() }
+
+        // Step 1: Select region (reuse existing selection UI)
+        let rect: CGRect = try await withCheckedThrowingContinuation { continuation in
+            let window = RegionSelectionWindow(screen: targetScreen) { rect in
+                snapLog("captureScrolling: selection done, rect=\(rect)")
+                continuation.resume(returning: rect)
+            } onCancel: {
+                snapLog("captureScrolling: cancelled")
+                continuation.resume(throwing: CancellationError())
+            }
+            regionSelectionWindow = window
+            window.beginSelection()
+        }
+
+        snapLog("captureScrolling: region selected, showing HUD")
+
+        // Step 2: Setup controller and HUD
+        let controller = ScrollingCaptureController(rect: rect, screen: targetScreen)
+        scrollingController = controller
+
+        let hud = ScrollingCaptureHUD()
+        scrollingHUD = hud
+
+        let hasAccessibility = Permissions.hasAccessibilityPermission()
+        if !hasAccessibility {
+            snapLog("captureScrolling: no accessibility permission, manual mode only")
+        }
+
+        // Step 3: Wait for user interaction via HUD
+        let image: CGImage = try await withCheckedThrowingContinuation { continuation in
+            var isAutoScrolling = false
+
+            controller.onFrameCaptured = { [weak hud] count in
+                hud?.updateFrameCount(count)
+            }
+
+            controller.onAutoScrollStopped = { [weak hud] in
+                isAutoScrolling = false
+                hud?.updateAutoScrolling(false)
+            }
+
+            hud.onAutoScroll = { [weak controller, weak hud] in
+                guard let controller else { return }
+                if isAutoScrolling {
+                    controller.stop()
+                    isAutoScrolling = false
+                    hud?.updateAutoScrolling(false)
+                    // Switch to manual mode so user can still scroll
+                    controller.startManualCapture()
+                } else {
+                    controller.stop()
+                    isAutoScrolling = true
+                    hud?.updateAutoScrolling(true)
+                    controller.startAutoScroll()
+                }
+            }
+
+            hud.onDone = { [weak controller, weak hud] in
+                guard let controller else { return }
+                if let result = controller.finish() {
+                    hud?.dismiss()
+                    continuation.resume(returning: result)
+                } else {
+                    hud?.dismiss()
+                    continuation.resume(throwing: KaptError.captureFailed)
+                }
+            }
+
+            hud.onCancel = { [weak controller, weak hud] in
+                controller?.stop()
+                hud?.dismiss()
+                continuation.resume(throwing: CancellationError())
+            }
+
+            hud.show(near: rect, on: targetScreen, hasAccessibility: hasAccessibility)
+
+            // Start in manual mode by default (captures on user scroll)
+            controller.startManualCapture()
+        }
+
+        scrollingController = nil
+        scrollingHUD = nil
+
+        snapLog("captureScrolling: stitched result \(image.width)x\(image.height)")
+        return image
     }
 
     // MARK: - Thumbnail Preview (bottom-right)
@@ -183,8 +299,9 @@ final class AppState {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
         let filename = "Kapt \(formatter.string(from: Date())).png"
+        let folder = UserDefaults.standard.string(forKey: "saveLocation") ?? "Desktop"
         let desktopURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Desktop")
+            .appendingPathComponent(folder)
             .appendingPathComponent(filename)
 
         do {

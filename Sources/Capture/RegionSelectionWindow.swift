@@ -5,11 +5,11 @@ final class RegionSelectionWindow: NSWindow {
     private let onSelect: (CGRect) -> Void
     private let onCancel: () -> Void
 
-    init(onSelect: @escaping (CGRect) -> Void, onCancel: @escaping () -> Void) {
+    init(screen: NSScreen? = nil, onSelect: @escaping (CGRect) -> Void, onCancel: @escaping () -> Void) {
         self.onSelect = onSelect
         self.onCancel = onCancel
 
-        let screen = NSScreen.main ?? NSScreen.screens[0]
+        let screen = screen ?? NSScreen.main ?? NSScreen.screens[0]
         super.init(
             contentRect: screen.frame,
             styleMask: .borderless,

@@ -1,52 +1,104 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct AnnotationCanvas: View {
     @Bindable var state: AnnotationState
     @FocusState private var isTextFieldFocused: Bool
+    @State private var isDropTargeted = false
 
     var body: some View {
         GeometryReader { geometry in
-            let imageSize = fitSize(for: state.baseImage, in: geometry.size)
+            let baseImageSize = fitSize(for: state.baseImage, in: geometry.size)
+            let totalLogical = state.totalCanvasSize
+            let displaySize = state.isCanvasExpanded
+                ? fitExpandedSize(baseSize: baseImageSize, state: state, in: geometry.size)
+                : baseImageSize
+            // Scale from logical (totalCanvasSize) to display
+            let renderScale = displaySize.width / totalLogical.width
 
             ZStack {
-                // Base image
-                Image(decorative: state.baseImage, scale: 1.0)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: imageSize.width, height: imageSize.height)
-
-                // Canvas overlay for shapes
+                // Canvas renders everything: background, base image, shapes
                 Canvas { context, size in
+                    // Apply scale so all shape coordinates (in logical space) map to display
+                    var ctx = context
+                    ctx.scaleBy(x: renderScale, y: renderScale)
+
+                    if state.isCanvasExpanded {
+                        // White background
+                        ctx.fill(Path(CGRect(origin: .zero, size: totalLogical)),
+                                    with: .color(.white))
+                        // Base image at offset
+                        ctx.draw(
+                            Image(decorative: state.baseImage, scale: 1.0),
+                            in: CGRect(
+                                x: state.canvasExpansionLeft,
+                                y: state.canvasExpansionTop,
+                                width: state.canvasSize.width,
+                                height: state.canvasSize.height
+                            )
+                        )
+                    } else {
+                        ctx.draw(
+                            Image(decorative: state.baseImage, scale: 1.0),
+                            in: CGRect(origin: .zero, size: totalLogical)
+                        )
+                    }
+
+                    // Draw all shapes (coordinates are in logical space)
                     for shape in state.shapes {
-                        var mutableContext = context
-                        shape.draw(in: &mutableContext, size: size)
+                        var mCtx = ctx
+                        shape.draw(in: &mCtx, size: totalLogical)
                     }
                     if let current = state.currentShape {
-                        var mutableContext = context
-                        current.draw(in: &mutableContext, size: size)
+                        var mCtx = ctx
+                        current.draw(in: &mCtx, size: totalLogical)
                     }
-                    // Draw selection indicator
                     if let selected = state.selectedShape {
-                        drawSelectionIndicator(for: selected, in: &context)
+                        drawSelectionIndicator(for: selected, in: &ctx)
                     }
                 }
-                .frame(width: imageSize.width, height: imageSize.height)
-                .gesture(canvasGesture(canvasSize: imageSize))
+                .frame(width: displaySize.width, height: displaySize.height)
+                .contentShape(Rectangle())
+                .gesture(canvasGesture(canvasSize: displaySize, renderScale: renderScale))
                 .onTapGesture(count: 2) { location in
-                    handleDoubleTap(at: location)
+                    // Convert display coords to logical coords
+                    let logical = CGPoint(x: location.x / renderScale, y: location.y / renderScale)
+                    handleDoubleTap(at: logical)
                 }
                 .onTapGesture { location in
-                    handleTap(at: location, canvasSize: imageSize)
+                    let logical = CGPoint(x: location.x / renderScale, y: location.y / renderScale)
+                    handleTap(at: logical, canvasSize: totalLogical)
                 }
 
-                // Text editing overlay
                 if state.isEditingText {
-                    textEditingOverlay(canvasSize: imageSize)
+                    textEditingOverlay(canvasSize: displaySize)
                 }
+            }
+            .overlay {
+                if isDropTargeted {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [8, 4]))
+                        .background(Color.accentColor.opacity(0.05))
+                        .frame(width: displaySize.width, height: displaySize.height)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onDrop(of: [.image, .fileURL], isTargeted: $isDropTargeted) { providers, location in
+                let canvasOrigin = CGPoint(
+                    x: (geometry.size.width - displaySize.width) / 2,
+                    y: (geometry.size.height - displaySize.height) / 2
+                )
+                // Convert display drop point to logical coords
+                let canvasPoint = CGPoint(
+                    x: (location.x - canvasOrigin.x) / renderScale,
+                    y: (location.y - canvasOrigin.y) / renderScale
+                )
+                handleImageDrop(providers: providers, at: canvasPoint)
+                return true
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .onAppear {
-                state.canvasSize = imageSize
+                state.canvasSize = baseImageSize
             }
             .onChange(of: geometry.size) {
                 state.canvasSize = fitSize(for: state.baseImage, in: geometry.size)
@@ -66,33 +118,46 @@ struct AnnotationCanvas: View {
     private func drawSelectionIndicator(for shape: any AnnotationShape, in context: inout GraphicsContext) {
         if let textShape = shape as? TextShape {
             let rect = textShape.boundingRect.insetBy(dx: -6, dy: -6)
-            // Dashed selection border
             let path = Path(roundedRect: rect, cornerRadius: 4)
             context.stroke(path, with: .color(.accentColor.opacity(0.8)),
                           style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-
-            // Resize handle — accent circle with white stroke + shadow
-            let handleSize: CGFloat = 10
-            let handleRect = CGRect(
-                x: rect.maxX - handleSize / 2,
-                y: rect.maxY - handleSize / 2,
-                width: handleSize, height: handleSize
-            )
-            let handlePath = Path(ellipseIn: handleRect)
-            // White outline
-            context.stroke(handlePath, with: .color(.white), lineWidth: 2)
-            // Accent fill
-            context.fill(handlePath, with: .color(.accentColor))
+        } else if let imageShape = shape as? ImageShape {
+            let rect = imageShape.rect
+            let path = Path(rect)
+            context.stroke(path, with: .color(.accentColor.opacity(0.8)),
+                          style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+            // 4 corner handles
+            for corner in [
+                CGPoint(x: rect.minX, y: rect.minY),
+                CGPoint(x: rect.maxX, y: rect.minY),
+                CGPoint(x: rect.minX, y: rect.maxY),
+                CGPoint(x: rect.maxX, y: rect.maxY),
+            ] {
+                drawHandle(at: corner, in: &context)
+            }
         }
+    }
+
+    private func drawHandle(at point: CGPoint, in context: inout GraphicsContext) {
+        let handleSize: CGFloat = 10
+        let handleRect = CGRect(
+            x: point.x - handleSize / 2,
+            y: point.y - handleSize / 2,
+            width: handleSize, height: handleSize
+        )
+        let handlePath = Path(ellipseIn: handleRect)
+        context.stroke(handlePath, with: .color(.white), lineWidth: 2)
+        context.fill(handlePath, with: .color(.accentColor))
     }
 
     // MARK: - Gestures
 
-    private func canvasGesture(canvasSize: CGSize) -> some Gesture {
+    private func canvasGesture(canvasSize: CGSize, renderScale: CGFloat = 1.0) -> some Gesture {
         DragGesture(minimumDistance: 1)
             .onChanged { value in
-                let start = value.startLocation
-                let current = value.location
+                // Convert display coordinates to logical coordinates
+                let start = CGPoint(x: value.startLocation.x / renderScale, y: value.startLocation.y / renderScale)
+                let current = CGPoint(x: value.location.x / renderScale, y: value.location.y / renderScale)
 
                 switch state.activeTool {
                 case .select:
@@ -162,36 +227,102 @@ struct AnnotationCanvas: View {
     // MARK: - Select Tool Drag (move or resize)
 
     private func handleSelectDrag(start: CGPoint, current: CGPoint) {
-        guard let id = state.selectedShapeID,
-              var textShape = state.shapes.first(where: { $0.id == id }) as? TextShape else { return }
+        guard let id = state.selectedShapeID else { return }
 
-        let rect = textShape.boundingRect
-        let handleRect = CGRect(x: rect.maxX - 8, y: rect.maxY - 8, width: 16, height: 16)
-
-        if handleRect.contains(start) {
-            // Resize: change fontSize based on vertical drag distance
-            let dy = current.y - start.y
-            let newSize = max(10, textShape.fontSize + dy * 0.3)
-            textShape.fontSize = newSize
-        } else if rect.insetBy(dx: -8, dy: -8).contains(start) {
-            // Move
-            let dx = current.x - start.x
-            let dy = current.y - start.y
+        // TextShape move only (font size changed via toolbar, not drag)
+        if var textShape = state.shapes.first(where: { $0.id == id }) as? TextShape {
+            if !state.isDragging {
+                guard textShape.boundingRect.insetBy(dx: -8, dy: -8).contains(start) else { return }
+                state.isDragging = true
+                state.dragInitialPosition = textShape.position
+                state.pushUndoSnapshot()
+            }
+            guard let initialPos = state.dragInitialPosition else { return }
             textShape.position = CGPoint(
-                x: textShape.position.x + dx,
-                y: textShape.position.y + dy
+                x: initialPos.x + (current.x - start.x),
+                y: initialPos.y + (current.y - start.y)
             )
+            state.liveUpdateShape(id, with: textShape)
+            return
         }
 
-        // Live update (don't push undo on every drag frame)
-        if let index = state.shapes.firstIndex(where: { $0.id == id }) {
-            state.shapes[index] = textShape
+        // ImageShape move/resize
+        if var imageShape = state.shapes.first(where: { $0.id == id }) as? ImageShape {
+            if !state.isDragging {
+                state.isDragging = true
+                state.dragInitialPosition = imageShape.origin
+                state.dragInitialSize = imageShape.size
+                state.pushUndoSnapshot()
+                state.resizeHandle = detectResizeHandle(for: imageShape, at: start)
+            }
+
+            if let handle = state.resizeHandle {
+                guard let initialSize = state.dragInitialSize,
+                      let initialOrigin = state.dragInitialPosition else { return }
+                let dx = current.x - start.x
+
+                // Calculate new width based on which handle and drag direction
+                let newWidth: CGFloat
+                switch handle {
+                case .bottomRight, .topRight:
+                    newWidth = max(40, initialSize.width + dx)
+                case .bottomLeft, .topLeft:
+                    newWidth = max(40, initialSize.width - dx)
+                }
+                let newHeight = newWidth / imageShape.aspectRatio
+
+                switch handle {
+                case .bottomRight:
+                    imageShape.size = CGSize(width: newWidth, height: newHeight)
+                case .bottomLeft:
+                    imageShape.origin.x = initialOrigin.x + initialSize.width - newWidth
+                    imageShape.size = CGSize(width: newWidth, height: newHeight)
+                case .topRight:
+                    imageShape.origin.y = initialOrigin.y + initialSize.height - newHeight
+                    imageShape.size = CGSize(width: newWidth, height: newHeight)
+                case .topLeft:
+                    imageShape.origin = CGPoint(
+                        x: initialOrigin.x + initialSize.width - newWidth,
+                        y: initialOrigin.y + initialSize.height - newHeight
+                    )
+                    imageShape.size = CGSize(width: newWidth, height: newHeight)
+                }
+            } else if imageShape.rect.insetBy(dx: -8, dy: -8).contains(start) {
+                guard let initialPos = state.dragInitialPosition else { return }
+                imageShape.origin = CGPoint(
+                    x: initialPos.x + (current.x - start.x),
+                    y: initialPos.y + (current.y - start.y)
+                )
+            }
+            state.liveUpdateShape(id, with: imageShape)
         }
     }
 
     private func endSelectDrag() {
-        // Drag ended — undo state was not pushed during drag.
-        // We could push here, but for simplicity we skip.
+        state.isDragging = false
+        state.dragInitialPosition = nil
+        state.dragInitialFontSize = nil
+        state.dragInitialSize = nil
+        state.resizeHandle = nil
+    }
+
+    private func detectResizeHandle(for shape: ImageShape, at point: CGPoint) -> ResizeHandle? {
+        let rect = shape.rect
+        let handleSize: CGFloat = 12
+        let corners: [(CGPoint, ResizeHandle)] = [
+            (CGPoint(x: rect.maxX, y: rect.maxY), .bottomRight),
+            (CGPoint(x: rect.minX, y: rect.maxY), .bottomLeft),
+            (CGPoint(x: rect.maxX, y: rect.minY), .topRight),
+            (CGPoint(x: rect.minX, y: rect.minY), .topLeft),
+        ]
+        for (corner, handle) in corners {
+            let hitRect = CGRect(
+                x: corner.x - handleSize, y: corner.y - handleSize,
+                width: handleSize * 2, height: handleSize * 2
+            )
+            if hitRect.contains(point) { return handle }
+        }
+        return nil
     }
 
     // MARK: - Tap Handling
@@ -320,6 +451,36 @@ struct AnnotationCanvas: View {
 
     // MARK: - Helpers
 
+    // MARK: - Image Drop
+
+    private func handleImageDrop(providers: [NSItemProvider], at location: CGPoint) {
+        for provider in providers {
+            if provider.canLoadObject(ofClass: NSImage.self) {
+                _ = provider.loadObject(ofClass: NSImage.self) { image, _ in
+                    guard let nsImage = image as? NSImage,
+                          let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                    else { return }
+                    Task { @MainActor in
+                        state.addDroppedImage(cgImage, at: location)
+                    }
+                }
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { data, _ in
+                    guard let data = data as? Data,
+                          let url = URL(dataRepresentation: data, relativeTo: nil),
+                          let nsImage = NSImage(contentsOf: url),
+                          let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                    else { return }
+                    Task { @MainActor in
+                        state.addDroppedImage(cgImage, at: location)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
     private func fitSize(for image: CGImage, in containerSize: CGSize) -> CGSize {
         let imageAspect = CGFloat(image.width) / CGFloat(image.height)
         let containerAspect = containerSize.width / containerSize.height
@@ -330,6 +491,21 @@ struct AnnotationCanvas: View {
         } else {
             let height = containerSize.height
             return CGSize(width: height * imageAspect, height: height)
+        }
+    }
+
+    /// Fit the expanded canvas (totalCanvasSize) into the container
+    private func fitExpandedSize(baseSize: CGSize, state: AnnotationState, in containerSize: CGSize) -> CGSize {
+        let total = state.totalCanvasSize
+        let aspect = total.width / total.height
+        let containerAspect = containerSize.width / containerSize.height
+
+        if aspect > containerAspect {
+            let width = containerSize.width
+            return CGSize(width: width, height: width / aspect)
+        } else {
+            let height = containerSize.height
+            return CGSize(width: height * aspect, height: height)
         }
     }
 }

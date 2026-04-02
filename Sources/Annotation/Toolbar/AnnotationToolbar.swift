@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct AnnotationToolbar: View {
     @Bindable var state: AnnotationState
@@ -73,6 +74,16 @@ struct AnnotationToolbar: View {
 
             toolDivider
 
+            Button { addImageFromFile() } label: {
+                Image(systemName: "photo.badge.plus")
+                    .font(.system(size: 13))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .help("Add Image")
+
+            toolDivider
+
             Button { state.undo() } label: {
                 Image(systemName: "arrow.uturn.backward")
                     .font(.system(size: 13))
@@ -99,6 +110,22 @@ struct AnnotationToolbar: View {
         Divider()
             .frame(height: 18)
             .padding(.horizontal, 4)
+    }
+
+    private func addImageFromFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.begin { response in
+            guard response == .OK,
+                  let url = panel.url,
+                  let nsImage = NSImage(contentsOf: url),
+                  let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            else { return }
+            // Auto-place at right edge for side-by-side layout
+            state.addImageAtEdge(cgImage, edge: .right)
+        }
     }
 
     private func toolButton(_ tool: AnnotationToolType) -> some View {

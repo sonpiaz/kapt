@@ -23,4 +23,18 @@ enum Permissions {
             return false
         }
     }
+
+    /// Check if Accessibility permission is granted (needed for auto-scroll)
+    static func hasAccessibilityPermission() -> Bool {
+        AXIsProcessTrusted()
+    }
+
+    /// Request Accessibility permission (opens System Settings)
+    @MainActor
+    static func requestAccessibilityPermission() {
+        let prompt = "kAXTrustedCheckOptionPrompt"
+        let key = prompt as CFString
+        let options = [key: kCFBooleanTrue!] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+    }
 }
