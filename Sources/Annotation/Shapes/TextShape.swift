@@ -8,6 +8,16 @@ struct TextShape: AnnotationShape {
     var strokeColor: Color
     var strokeWidth: CGFloat // not used for text, but protocol conformance
 
+    var boundingRect: CGRect {
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+        let size = (text as NSString).size(withAttributes: [.font: font])
+        return CGRect(origin: position, size: size)
+    }
+
+    func hitTest(point: CGPoint) -> Bool {
+        boundingRect.insetBy(dx: -8, dy: -8).contains(point)
+    }
+
     func draw(in context: inout GraphicsContext, size: CGSize) {
         let resolved = context.resolve(
             Text(text)
@@ -23,11 +33,9 @@ struct TextShape: AnnotationShape {
             .foregroundColor: NSColor(strokeColor),
         ]
         let nsString = text as NSString
-        // Flip context for text drawing (CGContext is flipped)
         context.saveGState()
         context.textMatrix = .identity
         let textSize = nsString.size(withAttributes: attributes)
-        // Draw at position (already in image coordinates)
         nsString.draw(at: NSPoint(x: position.x, y: position.y - textSize.height), withAttributes: attributes)
         context.restoreGState()
     }

@@ -14,10 +14,18 @@ protocol AnnotationShape: Identifiable, Sendable {
 
     /// Render into a CGContext for final export
     func render(in context: CGContext, imageSize: CGSize)
+
+    /// Hit test — does the point land on this shape?
+    func hitTest(point: CGPoint) -> Bool
+}
+
+extension AnnotationShape {
+    func hitTest(point: CGPoint) -> Bool { false }
 }
 
 /// All tool types
 enum AnnotationToolType: String, CaseIterable, Identifiable {
+    case select
     case arrow
     case rectangle
     case ellipse
@@ -32,6 +40,7 @@ enum AnnotationToolType: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
+        case .select: "Select"
         case .arrow: "Arrow"
         case .rectangle: "Rectangle"
         case .ellipse: "Ellipse"
@@ -46,6 +55,7 @@ enum AnnotationToolType: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .select: "cursorarrow"
         case .arrow: "arrow.up.right"
         case .rectangle: "rectangle"
         case .ellipse: "circle"

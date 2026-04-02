@@ -47,7 +47,6 @@ struct PreferencesView: View {
             Section("Keyboard Shortcuts") {
                 KeyboardShortcuts.Recorder("Capture Fullscreen:", name: .captureFullscreen)
                 KeyboardShortcuts.Recorder("Capture Region:", name: .captureRegion)
-                KeyboardShortcuts.Recorder("Capture Window:", name: .captureWindow)
             }
         }
         .formStyle(.grouped)

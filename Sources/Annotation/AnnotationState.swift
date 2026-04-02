@@ -18,10 +18,14 @@ final class AnnotationState {
     // Current shape being drawn (not yet committed)
     var currentShape: (any AnnotationShape)?
 
+    // Selection state
+    var selectedShapeID: ShapeID?
+
     // Text editing state
     var isEditingText = false
     var editingTextPosition: CGPoint = .zero
     var editingText: String = ""
+    var editingShapeID: ShapeID?  // nil = new text, non-nil = editing existing
 
     init(baseImage: CGImage) {
         self.baseImage = baseImage
@@ -50,6 +54,34 @@ final class AnnotationState {
 
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
+
+    // MARK: - Selection
+
+    func shapeAt(_ point: CGPoint) -> (any AnnotationShape)? {
+        // Search in reverse so topmost shape is found first
+        shapes.last(where: { $0.hitTest(point: point) })
+    }
+
+    var selectedShape: (any AnnotationShape)? {
+        guard let id = selectedShapeID else { return nil }
+        return shapes.first(where: { $0.id == id })
+    }
+
+    func updateShape(_ id: ShapeID, with newShape: any AnnotationShape) {
+        undoStack.append(shapes)
+        redoStack.removeAll()
+        if let index = shapes.firstIndex(where: { $0.id == id }) {
+            shapes[index] = newShape
+        }
+    }
+
+    func deleteSelectedShape() {
+        guard let id = selectedShapeID else { return }
+        undoStack.append(shapes)
+        redoStack.removeAll()
+        shapes.removeAll(where: { $0.id == id })
+        selectedShapeID = nil
+    }
 
     // MARK: - Flatten (export)
 

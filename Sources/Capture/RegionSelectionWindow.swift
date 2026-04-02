@@ -31,11 +31,13 @@ final class RegionSelectionWindow: NSWindow {
         let selectionView = RegionSelectionView(
             screenFrame: screen.frame,
             onSelect: { [weak self] rect in
-                self?.close()
+                self?.orderOut(nil)
+                NSCursor.pop()
                 onSelect(rect)
             },
             onCancel: { [weak self] in
-                self?.close()
+                self?.orderOut(nil)
+                NSCursor.pop()
                 onCancel()
             }
         )
@@ -55,4 +57,14 @@ final class RegionSelectionWindow: NSWindow {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { // ESC
+            orderOut(nil)
+            NSCursor.pop()
+            onCancel()
+        } else {
+            super.keyDown(with: event)
+        }
+    }
 }

@@ -1,11 +1,21 @@
 import SwiftUI
 import ScreenCaptureKit
 import AppKit
+func snapLog(_ msg: String) {
+    let line = "[\(Date())] \(msg)\n"
+    let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/snapx-debug.log")
+    if let handle = try? FileHandle(forWritingTo: url) {
+        handle.seekToEndOfFile()
+        handle.write(line.data(using: .utf8)!)
+        handle.closeFile()
+    } else {
+        try? line.data(using: .utf8)?.write(to: url)
+    }
+}
 
 enum CaptureMode {
     case fullscreen
     case region
-    case window
 }
 
 @MainActor
@@ -18,150 +28,141 @@ final class AppState {
     var isAnnotationEditorOpen = false
 
     let captureEngine = CaptureEngine()
-    private var quickAccessPanel: FloatingPanel<QuickAccessView>?
+    private var thumbnailPanel = ThumbnailPanel()
+    private var regionSelectionWindow: RegionSelectionWindow?
 
     // MARK: - Capture Actions
 
     func startCapture(mode: CaptureMode) {
-        guard !isCapturing else { return }
-        dismissQuickAccess()
+        snapLog("startCapture called with mode: \(mode)")
+        guard !isCapturing else {
+            snapLog("Already capturing, ignoring")
+            return
+        }
+        thumbnailPanel.dismiss()
+
+        // Activate app so region overlay can become key
+        NSApp.activate(ignoringOtherApps: true)
 
         Task {
             isCapturing = true
-            defer { isCapturing = false }
+            defer {
+                isCapturing = false
+                snapLog("isCapturing reset to false")
+            }
 
             do {
+                snapLog("Starting \(mode) capture...")
                 switch mode {
                 case .fullscreen:
                     capturedImage = try await captureEngine.captureFullscreen()
                 case .region:
                     capturedImage = try await captureRegion()
-                case .window:
-                    capturedImage = try await captureWindow()
                 }
 
                 if let image = capturedImage {
-                    showQuickAccess(for: image)
+                    snapLog("Capture success: \(image.width)x\(image.height)")
+                    saveToDesktop(image)
+                    image.copyToClipboard()
+                    snapLog("Saved and copied to clipboard")
+                    showThumbnail(for: image)
+                } else {
+                    snapLog("Capture returned nil image")
                 }
+            } catch is CancellationError {
+                snapLog("Capture cancelled")
+                statusMessage = "Capture cancelled"
             } catch {
+                snapLog("Capture error: \(error)")
                 statusMessage = "Capture failed: \(error.localizedDescription)"
             }
         }
     }
 
-    // MARK: - Region Capture (Phase 3)
+    // MARK: - Region Capture
 
     private func captureRegion() async throws -> CGImage {
-        return try await withCheckedThrowingContinuation { continuation in
-            let selectionWindow = RegionSelectionWindow { [weak self] rect in
-                guard let self else {
-                    continuation.resume(throwing: SnapXError.captureFailed)
-                    return
-                }
-                Task {
-                    do {
-                        let image = try await self.captureEngine.captureRegion(rect)
-                        continuation.resume(returning: image)
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
-                }
+        snapLog("captureRegion: creating selection window")
+        defer { cleanupRegionWindow() }
+        let rect: CGRect = try await withCheckedThrowingContinuation { continuation in
+            let window = RegionSelectionWindow { rect in
+                snapLog("captureRegion: selection done, rect=\(rect)")
+                continuation.resume(returning: rect)
             } onCancel: {
+                snapLog("captureRegion: cancelled")
                 continuation.resume(throwing: CancellationError())
             }
-            selectionWindow.beginSelection()
+            regionSelectionWindow = window
+            window.beginSelection()
+            snapLog("captureRegion: window.beginSelection() called")
+        }
+        snapLog("captureRegion: capturing rect")
+        let image = try await captureEngine.captureRegion(rect)
+        snapLog("captureRegion: crop success \(image.width)x\(image.height)")
+        return image
+    }
+
+    private func cleanupRegionWindow() {
+        regionSelectionWindow?.orderOut(nil)
+        regionSelectionWindow = nil
+    }
+
+    // MARK: - Thumbnail Preview (bottom-right)
+
+    func showThumbnail(for image: CGImage) {
+        thumbnailPanel.show(image: image) { [weak self] in
+            self?.openAnnotationEditor(for: image)
         }
     }
 
-    // MARK: - Window Capture (Phase 3)
+    // MARK: - Annotation Editor
 
-    private func captureWindow() async throws -> CGImage {
-        let windows = try await captureEngine.availableWindows()
-        guard !windows.isEmpty else { throw SnapXError.captureFailed }
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let picker = WindowPickerPanel(windows: windows) { [weak self] window in
-                guard let self else {
-                    continuation.resume(throwing: SnapXError.captureFailed)
-                    return
-                }
-                Task {
-                    do {
-                        let image = try await self.captureEngine.captureWindow(window)
-                        continuation.resume(returning: image)
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
-                }
-            } onCancel: {
-                continuation.resume(throwing: CancellationError())
-            }
-            picker.show()
-        }
-    }
-
-    // MARK: - Quick Access Overlay
-
-    func showQuickAccess(for image: CGImage) {
-        dismissQuickAccess()
-
-        let view = QuickAccessView(
-            image: image,
-            onCopy: { [weak self] in
-                image.copyToClipboard()
-                self?.statusMessage = "Copied!"
-                self?.dismissQuickAccess()
-            },
-            onSave: { [weak self] in
-                self?.saveToDesktop(image)
-                self?.dismissQuickAccess()
-            },
-            onAnnotate: { [weak self] in
-                self?.dismissQuickAccess()
-                self?.openAnnotationEditor(for: image)
-            },
-            onOCR: { [weak self] in
-                self?.dismissQuickAccess()
-                self?.performOCR(on: image)
-            },
-            onDismiss: { [weak self] in
-                self?.dismissQuickAccess()
-            }
-        )
-
-        let panel = FloatingPanel(contentView: view)
-        let mouseLocation = NSEvent.mouseLocation
-        panel.show(near: mouseLocation, size: NSSize(width: 300, height: 220))
-        quickAccessPanel = panel
-    }
-
-    func dismissQuickAccess() {
-        quickAccessPanel?.close()
-        quickAccessPanel = nil
-    }
-
-    // MARK: - Annotation Editor (Phase 4)
+    private var annotationPanel: NSPanel?
 
     func openAnnotationEditor(for image: CGImage) {
+        snapLog("openAnnotationEditor called, image: \(image.width)x\(image.height)")
         isAnnotationEditorOpen = true
         let state = AnnotationState(baseImage: image)
         let editorView = AnnotationEditorView(state: state) { [weak self] finalImage in
             self?.isAnnotationEditorOpen = false
+            self?.annotationPanel?.close()
+            self?.annotationPanel = nil
             if let finalImage {
                 self?.capturedImage = finalImage
-                self?.showQuickAccess(for: finalImage)
+                self?.saveToDesktop(finalImage)
+                finalImage.copyToClipboard()
+                self?.showThumbnail(for: finalImage)
             }
         }
-        let panel = FloatingPanel(contentView: editorView)
+
+        let panel = NSPanel(
+            contentRect: .zero,
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "SnapX — Annotate"
+        panel.level = .floating
+        panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.sharingType = .none
+        panel.contentView = NSHostingView(rootView: editorView)
+
         let size = NSSize(
             width: min(CGFloat(image.width) / 2 + 60, 1200),
             height: min(CGFloat(image.height) / 2 + 120, 800)
         )
-        panel.show(near: NSPoint(x: NSScreen.main!.frame.midX, y: NSScreen.main!.frame.midY), size: size)
+        panel.setContentSize(size)
         panel.center()
+
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+        annotationPanel = panel
+        snapLog("openAnnotationEditor: panel shown")
     }
 
-    // MARK: - OCR (Phase 6)
+    // MARK: - OCR
 
     func performOCR(on image: CGImage) {
         Task {

@@ -1,7 +1,7 @@
 import KeyboardShortcuts
 
 extension KeyboardShortcuts.Name {
-    static let captureFullscreen = Self("captureFullscreen", default: .init(.one, modifiers: [.command, .shift]))
-    static let captureRegion = Self("captureRegion", default: .init(.two, modifiers: [.command, .shift]))
-    static let captureWindow = Self("captureWindow", default: .init(.three, modifiers: [.command, .shift]))
+    // Cmd+Ctrl+Shift combos — won't conflict with macOS or Chrome
+    static let captureFullscreen = Self("captureFullscreen", default: .init(.three, modifiers: [.command, .control]))
+    static let captureRegion = Self("captureRegion", default: .init(.four, modifiers: [.command, .control]))
 }
