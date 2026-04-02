@@ -6,6 +6,7 @@ struct ThumbnailPreviewView: View {
     let image: CGImage
     @State private var isHovering = false
     @State private var appeared = false
+    @State private var countdown: CGFloat = 1.0
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 0) {
@@ -17,19 +18,29 @@ struct ThumbnailPreviewView: View {
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
+                        .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
                 )
+
+            // Countdown bar
+            GeometryReader { geo in
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color.accentColor.opacity(0.6))
+                    .frame(width: geo.size.width * countdown, height: 2)
+            }
+            .frame(height: 2)
+            .padding(.top, 6)
         }
         .padding(10)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
+                .strokeBorder(Color.secondary.opacity(0.2), lineWidth: 0.75)
         )
         .scaleEffect(isHovering ? 1.03 : 1.0)
-        .offset(x: appeared ? 0 : 240)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: appeared)
+        .opacity(appeared ? 1 : 0)
+        .offset(x: appeared ? 0 : 120)
+        .animation(.spring(response: 0.45, dampingFraction: 0.8), value: appeared)
         .animation(.easeInOut(duration: 0.15), value: isHovering)
         .onHover { hovering in
             isHovering = hovering
@@ -42,6 +53,9 @@ struct ThumbnailPreviewView: View {
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 appeared = true
+            }
+            withAnimation(.linear(duration: 5.0)) {
+                countdown = 0
             }
         }
     }

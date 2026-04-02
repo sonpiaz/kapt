@@ -6,35 +6,38 @@ struct AnnotationEditorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Toolbar
-            HStack {
-                AnnotationToolbar(state: state)
+            // Top toolbar
+            AnnotationToolbar(state: state)
+                .frame(maxWidth: .infinity)
+                .background(.ultraThinMaterial)
 
-                Spacer()
-
-                HStack(spacing: 8) {
-                    Button("Cancel") {
-                        onDone(nil)
-                    }
-                    .keyboardShortcut(.cancelAction)
-
-                    Button("Done") {
-                        let result = state.flatten()
-                        onDone(result)
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                }
-                .padding(.trailing, 8)
-            }
-            .padding(8)
-            .background(.ultraThinMaterial)
+            Divider()
 
             // Canvas
             AnnotationCanvas(state: state)
-                .padding(8)
+                .padding(4)
+
+            Divider()
+
+            // Bottom bar — Cancel / Done
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    onDone(nil)
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Done") {
+                    let result = state.flatten()
+                    onDone(result)
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 }

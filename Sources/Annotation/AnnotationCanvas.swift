@@ -65,16 +65,24 @@ struct AnnotationCanvas: View {
 
     private func drawSelectionIndicator(for shape: any AnnotationShape, in context: inout GraphicsContext) {
         if let textShape = shape as? TextShape {
-            let rect = textShape.boundingRect.insetBy(dx: -4, dy: -4)
-            let path = Path(roundedRect: rect, cornerRadius: 3)
-            context.stroke(path, with: .color(.accentColor), lineWidth: 1.5)
+            let rect = textShape.boundingRect.insetBy(dx: -6, dy: -6)
+            // Dashed selection border
+            let path = Path(roundedRect: rect, cornerRadius: 4)
+            context.stroke(path, with: .color(.accentColor.opacity(0.8)),
+                          style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
 
-            // Resize handle at bottom-right
+            // Resize handle — accent circle with white stroke + shadow
+            let handleSize: CGFloat = 10
             let handleRect = CGRect(
-                x: rect.maxX - 4, y: rect.maxY - 4,
-                width: 8, height: 8
+                x: rect.maxX - handleSize / 2,
+                y: rect.maxY - handleSize / 2,
+                width: handleSize, height: handleSize
             )
-            context.fill(Path(ellipseIn: handleRect), with: .color(.accentColor))
+            let handlePath = Path(ellipseIn: handleRect)
+            // White outline
+            context.stroke(handlePath, with: .color(.white), lineWidth: 2)
+            // Accent fill
+            context.fill(handlePath, with: .color(.accentColor))
         }
     }
 
@@ -170,8 +178,8 @@ struct AnnotationCanvas: View {
             let dx = current.x - start.x
             let dy = current.y - start.y
             textShape.position = CGPoint(
-                x: textShape.position.x + dx * 0.5,
-                y: textShape.position.y + dy * 0.5
+                x: textShape.position.x + dx,
+                y: textShape.position.y + dy
             )
         }
 
@@ -235,30 +243,49 @@ struct AnnotationCanvas: View {
 
     @ViewBuilder
     private func textEditingOverlay(canvasSize: CGSize) -> some View {
-        Color.black.opacity(0.01)
+        // Scrim to focus attention on text input
+        Color.black.opacity(0.15)
             .contentShape(Rectangle())
             .onTapGesture {
                 commitTextIfNeeded()
             }
             .overlay {
-                TextField("Type text...", text: $state.editingText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: state.fontSize, weight: .medium))
-                    .foregroundStyle(state.strokeColor)
-                    .frame(width: 240)
-                    .focused($isTextFieldFocused)
-                    .onAppear { isTextFieldFocused = true }
-                    .onSubmit {
-                        commitTextIfNeeded()
-                    }
-                    .onKeyPress(.escape) {
-                        state.isEditingText = false
-                        return .handled
-                    }
-                    .position(
-                        x: min(max(state.editingTextPosition.x, 120), canvasSize.width - 120),
-                        y: state.editingTextPosition.y
-                    )
+                VStack(spacing: 0) {
+                    TextField("Type text...", text: $state.editingText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: state.fontSize, weight: .medium))
+                        .foregroundStyle(state.strokeColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .frame(width: 260)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(.ultraThinMaterial)
+                                .shadow(color: .black.opacity(0.2), radius: 8, y: 2)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.accentColor.opacity(0.5), lineWidth: 1)
+                        )
+                        .focused($isTextFieldFocused)
+                        .onAppear { isTextFieldFocused = true }
+                        .onSubmit {
+                            commitTextIfNeeded()
+                        }
+                        .onKeyPress(.escape) {
+                            state.isEditingText = false
+                            return .handled
+                        }
+                    // Hint
+                    Text("Return to commit · ESC to cancel")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                }
+                .position(
+                    x: min(max(state.editingTextPosition.x, 140), canvasSize.width - 140),
+                    y: state.editingTextPosition.y
+                )
             }
     }
 

@@ -20,53 +20,73 @@ struct PopoverMenuView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            menuButton("Capture Fullscreen") {
+            // App header
+            HStack(spacing: 8) {
+                Image(systemName: "camera.viewfinder")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text("Kapt")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+
+            Divider().padding(.horizontal, 4)
+
+            menuButton("Capture Fullscreen", icon: "rectangle.dashed") {
                 dismissAction()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     appState.startCapture(mode: .fullscreen)
                 }
             }
-            menuButton("Capture Region") {
+            menuButton("Capture Region", icon: "crop") {
                 dismissAction()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     appState.startCapture(mode: .region)
                 }
             }
 
-            Divider()
+            Divider().padding(.horizontal, 4)
 
             if let message = appState.statusMessage {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                Divider()
+                    .padding(.horizontal, 10)
+                Divider().padding(.horizontal, 4)
             }
 
-            menuButton("Preferences...") {
+            menuButton("Preferences...", icon: "gear") {
                 dismissAction()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     AppDelegate.showPreferences()
                 }
             }
 
-            Divider()
+            Divider().padding(.horizontal, 4)
 
-            menuButton("Quit Kapt") {
+            menuButton("Quit Kapt", icon: "power") {
                 NSApp.terminate(nil)
             }
         }
         .padding(6)
-        .frame(width: 200)
+        .frame(width: 210)
     }
 
-    private func menuButton(_ title: String, action: @escaping () -> Void) -> some View {
+    private func menuButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 5)
-                .padding(.horizontal, 8)
-                .contentShape(Rectangle())
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12))
+                    .frame(width: 16)
+                    .foregroundStyle(.secondary)
+                Text(title)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 5)
+            .padding(.horizontal, 8)
+            .contentShape(Rectangle())
         }
         .buttonStyle(PopoverButtonStyle())
     }
@@ -105,10 +125,11 @@ struct PopoverButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(configuration.isPressed ? Color.accentColor : isHovering ? Color.accentColor.opacity(0.3) : Color.clear)
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(configuration.isPressed ? Color.accentColor : isHovering ? Color.accentColor : Color.clear)
             )
-            .foregroundColor(configuration.isPressed ? .white : .primary)
+            .foregroundColor(configuration.isPressed || isHovering ? .white : .primary)
+            .animation(.easeInOut(duration: 0.1), value: isHovering)
             .onHover { hovering in
                 isHovering = hovering
             }
