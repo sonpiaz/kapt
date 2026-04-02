@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct ThumbnailPreviewView: View {
     let image: CGImage
@@ -46,27 +47,123 @@ struct ThumbnailPreviewView: View {
     }
 }
 
-// NSPanel subclass that accepts first mouse click without requiring activation
+// MARK: - Draggable hosting view
+
+final class DraggableThumbnailView: NSView, NSDraggingSource, NSPasteboardItemDataProvider {
+    nonisolated(unsafe) var image: CGImage?
+    var fileURL: URL?
+    var onClick: (() -> Void)?
+    private var hostingView: NSView?
+    private var mouseDownPoint: NSPoint?
+    private var isDragging = false
+
+    func setup(image: CGImage, fileURL: URL?, onClick: @escaping () -> Void) {
+        self.image = image
+        self.fileURL = fileURL
+        self.onClick = onClick
+
+        let swiftUIView = ThumbnailPreviewView(image: image)
+        let hosting = NSHostingView(rootView: swiftUIView)
+        hosting.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(hosting)
+        NSLayoutConstraint.activate([
+            hosting.topAnchor.constraint(equalTo: topAnchor),
+            hosting.bottomAnchor.constraint(equalTo: bottomAnchor),
+            hosting.leadingAnchor.constraint(equalTo: leadingAnchor),
+            hosting.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+        hostingView = hosting
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        mouseDownPoint = event.locationInWindow
+        isDragging = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let startPoint = mouseDownPoint else { return }
+        let current = event.locationInWindow
+        let dx = current.x - startPoint.x
+        let dy = current.y - startPoint.y
+        let distance = sqrt(dx * dx + dy * dy)
+
+        // Start drag after 4pt threshold
+        if !isDragging && distance > 4 {
+            isDragging = true
+            startDraggingSession(with: event)
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if !isDragging {
+            snapLog("Thumbnail clicked — opening annotation editor")
+            onClick?()
+        }
+        mouseDownPoint = nil
+        isDragging = false
+    }
+
+    private func startDraggingSession(with event: NSEvent) {
+        guard let image else { return }
+
+        // Use the saved file on Desktop, or create temp if needed
+        let dragURL: URL
+        if let fileURL, FileManager.default.fileExists(atPath: fileURL.path) {
+            dragURL = fileURL
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
+            let tempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("Kapt \(formatter.string(from: Date())).png")
+            guard let pngData = image.pngData else { return }
+            do { try pngData.write(to: tempURL) } catch { return }
+            dragURL = tempURL
+        }
+
+        let dragItem = NSDraggingItem(pasteboardWriter: dragURL as NSURL)
+        let thumbSize = NSSize(width: 120, height: 80)
+        let nsImage = image.nsImage
+        nsImage.size = thumbSize
+        dragItem.setDraggingFrame(bounds, contents: nsImage)
+
+        beginDraggingSession(with: [dragItem], event: event, source: self)
+    }
+
+    // MARK: - NSDraggingSource
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .outsideApplication ? .copy : .copy
+    }
+
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        // no-op: drag uses the saved file on Desktop
+    }
+
+    // MARK: - NSPasteboardItemDataProvider
+
+    func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
+        if type == .png, let data = image?.pngData {
+            item.setData(data, forType: .png)
+        }
+    }
+}
+
+// MARK: - Panel
+
 final class ClickablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var acceptsFirstResponder: Bool { true }
-}
-
-final class ClickableHostingView<Content: View>: NSHostingView<Content> {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 @MainActor
 final class ThumbnailPanel {
     private var panel: ClickablePanel?
     private var autoDismissTask: Task<Void, Never>?
-    private var clickAction: (() -> Void)?
 
-    func show(image: CGImage, onClick: @escaping () -> Void) {
+    func show(image: CGImage, fileURL: URL? = nil, onClick: @escaping () -> Void) {
         dismiss()
-        clickAction = onClick
-
-        let view = ThumbnailPreviewView(image: image)
 
         let panel = ClickablePanel(
             contentRect: .zero,
@@ -86,17 +183,17 @@ final class ThumbnailPanel {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.sharingType = .none
 
-        let hostingView = ClickableHostingView(rootView: view)
-        panel.contentView = hostingView
-
-        // Add click gesture to the hosting view
-        let clickGesture = NSClickGestureRecognizer(target: self, action: #selector(handleClick))
-        hostingView.addGestureRecognizer(clickGesture)
+        let draggableView = DraggableThumbnailView()
+        draggableView.setup(image: image, fileURL: fileURL) { [weak self] in
+            let action = onClick
+            self?.dismiss()
+            action()
+        }
+        panel.contentView = draggableView
 
         let panelSize = NSSize(width: 240, height: 170)
         panel.setContentSize(panelSize)
 
-        // Position at bottom-right of main screen
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
             let origin = NSPoint(
@@ -109,7 +206,6 @@ final class ThumbnailPanel {
         panel.orderFrontRegardless()
         self.panel = panel
 
-        // Auto-dismiss after 5 seconds
         autoDismissTask = Task {
             try? await Task.sleep(for: .seconds(5))
             if !Task.isCancelled {
@@ -118,19 +214,11 @@ final class ThumbnailPanel {
         }
     }
 
-    @objc private func handleClick() {
-        snapLog("Thumbnail clicked — opening annotation editor")
-        let action = clickAction
-        dismiss()
-        action?()
-    }
-
     func dismiss() {
         autoDismissTask?.cancel()
         autoDismissTask = nil
         panel?.orderOut(nil)
         panel = nil
-        clickAction = nil
     }
 
     private func animateDismiss() {

@@ -62,10 +62,10 @@ final class AppState {
 
                 if let image = capturedImage {
                     snapLog("Capture success: \(image.width)x\(image.height)")
-                    saveToDesktop(image)
+                    let savedURL = saveToDesktop(image)
                     image.copyToClipboard()
                     snapLog("Saved and copied to clipboard")
-                    showThumbnail(for: image)
+                    showThumbnail(for: image, fileURL: savedURL)
                 } else {
                     snapLog("Capture returned nil image")
                 }
@@ -109,8 +109,8 @@ final class AppState {
 
     // MARK: - Thumbnail Preview (bottom-right)
 
-    func showThumbnail(for image: CGImage) {
-        thumbnailPanel.show(image: image) { [weak self] in
+    func showThumbnail(for image: CGImage, fileURL: URL? = nil) {
+        thumbnailPanel.show(image: image, fileURL: fileURL) { [weak self] in
             self?.openAnnotationEditor(for: image)
         }
     }
@@ -178,10 +178,11 @@ final class AppState {
 
     // MARK: - Save
 
-    func saveToDesktop(_ image: CGImage) {
+    @discardableResult
+    func saveToDesktop(_ image: CGImage) -> URL? {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let filename = "SnapX_\(formatter.string(from: Date())).png"
+        formatter.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
+        let filename = "Kapt \(formatter.string(from: Date())).png"
         let desktopURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Desktop")
             .appendingPathComponent(filename)
@@ -190,8 +191,10 @@ final class AppState {
             try image.savePNG(to: desktopURL)
             lastSaveURL = desktopURL
             statusMessage = "Saved to Desktop"
+            return desktopURL
         } catch {
             statusMessage = "Save failed: \(error.localizedDescription)"
+            return nil
         }
     }
 }
