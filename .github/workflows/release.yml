@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Build release binary
+        run: swift build -c release
+
+      - name: Package app bundle
+        run: |
+          APP_NAME="Kapt"
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          APP_DIR="$APP_NAME.app"
+          CONTENTS="$APP_DIR/Contents"
+          MACOS="$CONTENTS/MacOS"
+          RESOURCES="$CONTENTS/Resources"
+
+          mkdir -p "$MACOS" "$RESOURCES"
+          cp .build/release/Kapt "$MACOS/$APP_NAME"
+
+          # Copy app icon
+          if [ -f "Resources/AppIcon.icns" ]; then
+            cp "Resources/AppIcon.icns" "$RESOURCES/AppIcon.icns"
+          fi
+
+          # Generate Info.plist
+          cat > "$CONTENTS/Info.plist" << PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleName</key>
+              <string>Kapt</string>
+              <key>CFBundleDisplayName</key>
+              <string>Kapt</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.sonpiaz.kapt</string>
+              <key>CFBundleVersion</key>
+              <string>${VERSION}</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${VERSION}</string>
+              <key>CFBundleExecutable</key>
+              <string>Kapt</string>
+              <key>CFBundleIconFile</key>
+              <string>AppIcon</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>LSUIElement</key>
+              <true/>
+              <key>LSMinimumSystemVersion</key>
+              <string>15.0</string>
+              <key>NSScreenCaptureUsageDescription</key>
+              <string>Kapt needs screen recording permission to capture screenshots.</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+          </dict>
+          </plist>
+          PLIST
+
+          # Ad-hoc sign
+          codesign --force --deep --sign - "$APP_DIR"
+
+          # Zip
+          ZIP_NAME="Kapt-${VERSION}.zip"
+          ditto -c -k --keepParent "$APP_DIR" "$ZIP_NAME"
+
+          # Generate sha256
+          shasum -a 256 "$ZIP_NAME" > "$ZIP_NAME.sha256"
+
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Kapt v${{ env.VERSION }}"
+          body: "Kapt v${{ env.VERSION }} — Lightweight macOS screenshot tool with annotation, OCR, and scrolling capture."
+          files: |
+            ${{ env.ZIP_NAME }}
+            ${{ env.ZIP_NAME }}.sha256
