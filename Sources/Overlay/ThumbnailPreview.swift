@@ -90,8 +90,16 @@ final class DraggableThumbnailView: NSView, NSDraggingSource, NSPasteboardItemDa
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+
+    // Route all mouse events to this view, not the NSHostingView child
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return frame.contains(point) ? self : nil
+    }
 
     override func mouseDown(with event: NSEvent) {
+        // Ensure this window is key immediately so drag works on first click
+        window?.makeKey()
         mouseDownPoint = event.locationInWindow
         isDragging = false
     }
@@ -103,8 +111,8 @@ final class DraggableThumbnailView: NSView, NSDraggingSource, NSPasteboardItemDa
         let dy = current.y - startPoint.y
         let distance = sqrt(dx * dx + dy * dy)
 
-        // Start drag after 4pt threshold
-        if !isDragging && distance > 4 {
+        // Start drag after 3pt threshold (reduced for snappier feel)
+        if !isDragging && distance > 3 {
             isDragging = true
             startDraggingSession(with: event)
         }
@@ -169,6 +177,14 @@ final class DraggableThumbnailView: NSView, NSDraggingSource, NSPasteboardItemDa
 final class ClickablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+
+    // Accept mouse events without requiring the panel to be key first
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown {
+            makeKey()
+        }
+        super.sendEvent(event)
+    }
 }
 
 @MainActor
