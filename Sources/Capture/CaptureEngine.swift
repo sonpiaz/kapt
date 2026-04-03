@@ -59,8 +59,9 @@ final class CaptureEngine {
 
         let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
         let config = SCStreamConfiguration()
-        config.width = display.width * 2  // Retina
-        config.height = display.height * 2
+        let backingScale = screen.backingScaleFactor
+        config.width = Int(screen.frame.width * backingScale)
+        config.height = Int(screen.frame.height * backingScale)
         config.showsCursor = false
 
         return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
@@ -129,19 +130,25 @@ final class CaptureEngine {
 
         let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
         let config = SCStreamConfiguration()
-        config.width = display.width * 2
-        config.height = display.height * 2
+        // Use the actual backing pixel size for accurate capture
+        let backingScale = screen.backingScaleFactor
+        config.width = Int(screen.frame.width * backingScale)
+        config.height = Int(screen.frame.height * backingScale)
         config.showsCursor = false
 
         let fullImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
 
-        let scale = CGFloat(fullImage.width) / screen.frame.width
+        // Scale from logical points to actual captured pixels
+        let scaleX = CGFloat(fullImage.width) / screen.frame.width
+        let scaleY = CGFloat(fullImage.height) / screen.frame.height
         let imageRect = CGRect(
-            x: rect.origin.x * scale,
-            y: rect.origin.y * scale,
-            width: rect.width * scale,
-            height: rect.height * scale
+            x: rect.origin.x * scaleX,
+            y: rect.origin.y * scaleY,
+            width: rect.width * scaleX,
+            height: rect.height * scaleY
         )
+
+        snapLog("captureRegion: screen=\(screen.frame), backing=\(backingScale), fullImage=\(fullImage.width)x\(fullImage.height), rect=\(rect), imageRect=\(imageRect)")
 
         guard let cropped = fullImage.cropping(to: imageRect) else {
             throw KaptError.captureFailed

@@ -3,20 +3,27 @@ import UniformTypeIdentifiers
 
 struct AnnotationToolbar: View {
     @Bindable var state: AnnotationState
+    let onSaveAs: () -> Void
+    let onDone: () -> Void
 
     var body: some View {
         HStack(spacing: 3) {
+            // Traffic light avoidance zone
+            Spacer().frame(width: 70)
+
+            // Group 1: Drawing tools
             ForEach(AnnotationToolType.allCases) { tool in
                 toolButton(tool)
             }
 
             toolDivider
 
+            // Group 2: Style controls
             ColorPicker("", selection: $state.strokeColor)
                 .labelsHidden()
-                .frame(width: 28, height: 28)
+                .frame(width: 24, height: 24)
 
-            // Stroke width with current value badge
+            // Inline stroke width
             Menu {
                 ForEach([1, 2, 3, 5, 8], id: \.self) { width in
                     Button {
@@ -31,17 +38,14 @@ struct AnnotationToolbar: View {
                     }
                 }
             } label: {
-                VStack(spacing: 1) {
-                    Image(systemName: "lineweight")
-                        .font(.system(size: 11))
-                    Text("\(Int(state.strokeWidth))")
-                        .font(.system(size: 8, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(width: 28, height: 28)
+                Text("\(Int(state.strokeWidth))px")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(.quaternary))
             }
             .menuStyle(.borderlessButton)
-            .frame(width: 28)
+            .frame(width: 36)
 
             // Font size (text tool only)
             if state.activeTool == .text {
@@ -59,31 +63,19 @@ struct AnnotationToolbar: View {
                         }
                     }
                 } label: {
-                    VStack(spacing: 1) {
-                        Image(systemName: "textformat.size")
-                            .font(.system(size: 11))
-                        Text("\(Int(state.fontSize))")
-                            .font(.system(size: 8, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(width: 28, height: 28)
+                    Text("\(Int(state.fontSize))pt")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(.quaternary))
                 }
                 .menuStyle(.borderlessButton)
-                .frame(width: 28)
+                .frame(width: 36)
             }
 
             toolDivider
 
-            Button { addImageFromFile() } label: {
-                Image(systemName: "photo.badge.plus")
-                    .font(.system(size: 13))
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .help("Add Image")
-
-            toolDivider
-
+            // Group 3: Undo/Redo
             Button { state.undo() } label: {
                 Image(systemName: "arrow.uturn.backward")
                     .font(.system(size: 13))
@@ -101,6 +93,31 @@ struct AnnotationToolbar: View {
             .buttonStyle(.plain)
             .disabled(!state.canRedo)
             .keyboardShortcut("z", modifiers: [.command, .shift])
+
+            toolDivider
+
+            // Add Image
+            Button { addImageFromFile() } label: {
+                Image(systemName: "photo.badge.plus")
+                    .font(.system(size: 13))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .help("Add Image")
+
+            // Push actions to the right
+            Spacer()
+
+            // Group 4: Actions
+            Button("Save as\u{2026}", action: onSaveAs)
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            Button("Done", action: onDone)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -123,7 +140,6 @@ struct AnnotationToolbar: View {
                   let nsImage = NSImage(contentsOf: url),
                   let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
             else { return }
-            // Auto-place at right edge for side-by-side layout
             state.addImageAtEdge(cgImage, edge: .right)
         }
     }

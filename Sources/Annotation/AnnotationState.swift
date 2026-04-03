@@ -25,6 +25,26 @@ final class AnnotationState {
     // Selection state
     var selectedShapeID: ShapeID?
 
+    // Zoom state
+    var zoomScale: CGFloat = 1.0
+    var zoomOffset: CGPoint = .zero // pan offset when zoomed
+    static let zoomMin: CGFloat = 0.25
+    static let zoomMax: CGFloat = 5.0
+    static let zoomStep: CGFloat = 0.25
+
+    func zoomIn() {
+        zoomScale = min(zoomScale + Self.zoomStep, Self.zoomMax)
+    }
+
+    func zoomOut() {
+        zoomScale = max(zoomScale - Self.zoomStep, Self.zoomMin)
+    }
+
+    func resetZoom() {
+        zoomScale = 1.0
+        zoomOffset = .zero
+    }
+
     // Drag state — captured on drag start for smooth move/resize
     var dragInitialPosition: CGPoint?
     var dragInitialFontSize: CGFloat?

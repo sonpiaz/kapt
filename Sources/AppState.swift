@@ -234,15 +234,18 @@ final class AppState {
     // MARK: - Annotation Editor
 
     private var annotationPanel: NSPanel?
+    private var annotationPanelDelegate: NSWindowDelegate?
 
     func openAnnotationEditor(for image: CGImage) {
         snapLog("openAnnotationEditor called, image: \(image.width)x\(image.height)")
         isAnnotationEditorOpen = true
         let state = AnnotationState(baseImage: image)
-        let editorView = AnnotationEditorView(state: state) { [weak self] finalImage in
+
+        let doneHandler: (CGImage?) -> Void = { [weak self] finalImage in
             self?.isAnnotationEditorOpen = false
             self?.annotationPanel?.close()
             self?.annotationPanel = nil
+            self?.annotationPanelDelegate = nil
             if let finalImage {
                 self?.capturedImage = finalImage
                 self?.saveToDesktop(finalImage)
@@ -251,23 +254,36 @@ final class AppState {
             }
         }
 
+        let editorView = AnnotationEditorView(state: state, onDone: doneHandler)
+
         let panel = NSPanel(
             contentRect: .zero,
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        panel.title = "Kapt — Annotate"
+        panel.titlebarAppearsTransparent = true
+        panel.titleVisibility = .hidden
         panel.level = .floating
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.sharingType = .none
+        panel.isMovableByWindowBackground = false
         panel.contentView = NSHostingView(rootView: editorView)
+
+        // Window close = cancel (replaces Cancel button)
+        let delegate = AnnotationPanelDelegate { [weak self] in
+            self?.isAnnotationEditorOpen = false
+            self?.annotationPanel = nil
+            self?.annotationPanelDelegate = nil
+        }
+        panel.delegate = delegate
+        annotationPanelDelegate = delegate
 
         let size = NSSize(
             width: min(CGFloat(image.width) / 2 + 60, 1200),
-            height: min(CGFloat(image.height) / 2 + 120, 800)
+            height: min(CGFloat(image.height) / 2 + 100, 800)
         )
         panel.setContentSize(size)
         panel.center()
@@ -313,5 +329,16 @@ final class AppState {
             statusMessage = "Save failed: \(error.localizedDescription)"
             return nil
         }
+    }
+}
+
+// MARK: - Annotation Panel Delegate
+
+@MainActor
+private final class AnnotationPanelDelegate: NSObject, NSWindowDelegate {
+    let onClose: @MainActor () -> Void
+    init(onClose: @escaping @MainActor () -> Void) { self.onClose = onClose }
+    func windowWillClose(_ notification: Notification) {
+        onClose()
     }
 }

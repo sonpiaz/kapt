@@ -77,7 +77,7 @@ struct PreferencesView: View {
 
     private var scrollingTab: some View {
         Form {
-            Section("Auto Scroll") {
+            Section {
                 HStack {
                     Text("Scroll speed")
                     Spacer()
@@ -89,42 +89,41 @@ struct PreferencesView: View {
                     .pickerStyle(.segmented)
                     .frame(width: 180)
                 }
-                Text("How fast to scroll when using Auto Scroll mode.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
 
-            Section("Limits") {
-                Picker("Max capture height", selection: $scrollMaxHeight) {
+                Picker("Max height", selection: $scrollMaxHeight) {
                     Text("10,000 px").tag(10000)
                     Text("20,000 px").tag(20000)
                     Text("40,000 px").tag(40000)
                     Text("Unlimited").tag(100000)
                 }
-                Text("Auto-stops scrolling capture when the stitched image reaches this height.")
+            } header: {
+                Text("Scrolling Capture")
+            } footer: {
+                Text("Select an area, then scroll to capture long pages. Auto Scroll handles scrolling for you.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
 
-            Section("Accessibility") {
-                HStack {
-                    if Permissions.hasAccessibilityPermission() {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text("Accessibility access granted")
-                    } else {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                        Text("Required for Auto Scroll")
+            if !Permissions.hasAccessibilityPermission() {
+                Section {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Enable Auto Scroll")
+                                .font(.system(size: 13, weight: .medium))
+                            Text("Lets Kapt scroll the page automatically. Without this, you scroll manually.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         Spacer()
-                        Button("Grant Access") {
+                        Button("Allow") {
                             Permissions.requestAccessibilityPermission()
                         }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
                     }
+                } header: {
+                    Text("Optional")
                 }
-                Text("Auto Scroll injects scroll events into the target app, which requires Accessibility permission. Manual scrolling works without it.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
             }
         }
         .formStyle(.grouped)

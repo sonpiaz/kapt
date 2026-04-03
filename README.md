@@ -1,12 +1,28 @@
-# Kapt
+<h1 align="center">Kapt</h1>
 
-Lightweight macOS screenshot tool with annotation, OCR, and scrolling capture.
+<p align="center">
+  Lightweight macOS screenshot tool with annotation, OCR, and scrolling capture.
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black.svg)](https://www.apple.com/macos/)
-[![Swift 6](https://img.shields.io/badge/Swift-6-orange.svg)](https://swift.org/)
+<p align="center">
+  <a href="https://github.com/sonpiaz/kapt/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sonpiaz/kapt" alt="License" /></a>
+  <a href="https://github.com/sonpiaz/kapt/stargazers"><img src="https://img.shields.io/github/stars/sonpiaz/kapt" alt="Stars" /></a>
+  <img src="https://img.shields.io/badge/macOS-15%2B-black" alt="macOS 15+" />
+  <img src="https://img.shields.io/badge/Swift-6-orange" alt="Swift 6" />
+</p>
 
-Kapt lives in your menu bar, ready to capture screenshots with powerful annotation tools, optical character recognition, and scrolling capture for tall content. Customizable hotkeys, native drag-to-share, and zero dependencies beyond macOS.
+---
+
+## Features
+
+- **Fullscreen capture** (`Cmd+Ctrl+3`) — Capture the active display
+- **Region capture** (`Cmd+Ctrl+4`) — Select and capture a rectangular area
+- **Scrolling capture** (`Cmd+Ctrl+5`) — Capture tall content with auto-scroll stitching
+- **Annotation tools** — Arrow, rectangle, ellipse, line, freehand, text, counter, blur/pixelate, image insert
+- **OCR** — Extract text from screenshots using the Vision framework
+- **Smart thumbnails** — Floating preview after capture — click to annotate, drag to share
+- **Customizable hotkeys** — Configure shortcuts in Settings
+- **Menu bar app** — Always ready, no dock icon
 
 ## Install
 
@@ -24,32 +40,6 @@ cd kapt
 ./scripts/install.sh
 ```
 
-## Features
-
-### Capture Modes
-
-| Mode | Hotkey | Description |
-|------|--------|-------------|
-| Fullscreen | `Cmd+Ctrl+3` | Capture the active display |
-| Region | `Cmd+Ctrl+4` | Select and capture a rectangular area |
-| Scrolling | `Cmd+Ctrl+5` | Capture tall content with auto-scroll stitching |
-
-### Annotation Tools
-
-Arrow, rectangle, ellipse, line, freehand draw, text, counter numbers, blur/pixelate regions, image insertion — with full undo/redo.
-
-### OCR
-
-Extract text from captured images using the Vision framework. View and copy recognized text instantly.
-
-### Smart Thumbnails
-
-Floating preview after capture — click to annotate, drag to any app to share. Auto-dismisses after 5 seconds.
-
-## Screenshots
-
-<!-- Add screenshots here -->
-
 ## Requirements
 
 - macOS 15.0 (Sequoia) or later
@@ -59,11 +49,8 @@ Floating preview after capture — click to annotate, drag to any app to share. 
 ## Development
 
 ```bash
-# Quick dev cycle (~3 seconds)
-./scripts/dev.sh
+./scripts/dev.sh    # Kill → rebuild → relaunch (~3 seconds)
 ```
-
-This kills any running instance, rebuilds, updates the app bundle, and relaunches.
 
 ## Project Structure
 
@@ -77,37 +64,33 @@ Sources/
 ├── Hotkeys/                     — Keyboard shortcut registration
 ├── MenuBar/                     — Preferences UI
 └── Overlay/                     — Floating thumbnail, drag support
-
-scripts/
-├── install.sh                   — Build + create .app bundle
-└── dev.sh                       — Quick dev cycle
 ```
 
 ## Tech Stack
 
-- **Language:** Swift 6
-- **UI:** SwiftUI
-- **Capture:** ScreenCaptureKit
-- **Build:** Swift Package Manager
-- **Dependency:** [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) (Sindre Sorhus)
+| Technology | Purpose |
+|-----------|---------|
+| [Swift 6](https://swift.org/) | Language |
+| SwiftUI | UI framework |
+| ScreenCaptureKit | Screen capture API |
+| Swift Package Manager | Build system |
+| [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) | Hotkey management |
 
 ## Contributing
 
-Pull requests welcome. For major changes, please open an issue first.
-
-1. Fork the repo
-2. Create your branch (`git checkout -b feat/amazing-feature`)
-3. Commit (`git commit -m 'feat: add amazing feature'`)
-4. Push (`git push origin feat/amazing-feature`)
-5. Open a Pull Request
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Related
 
 - [Yap](https://github.com/sonpiaz/yap) — Push-to-talk dictation for macOS
 - [hidrix-tools](https://github.com/sonpiaz/hidrix-tools) — MCP server for web & social search
 - [affiliate-skills](https://github.com/Affitor/affiliate-skills) — 45 AI agent skills
-- [evox](https://github.com/sonpiaz/evox) — Multi-agent orchestration system
+- [content-pipeline](https://github.com/Affitor/content-pipeline) — AI-powered LinkedIn content generation
 
 ## License
 
-[MIT](LICENSE) — Son Piaz
+MIT — see [LICENSE](LICENSE) for details.
+
+---
+
+<p align="center">Built by <a href="https://github.com/sonpiaz">Son Piaz</a></p>

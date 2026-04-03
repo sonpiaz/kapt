@@ -96,7 +96,14 @@ struct AnnotationCanvas: View {
                 handleImageDrop(providers: providers, at: canvasPoint)
                 return true
             }
-            .frame(width: geometry.size.width, height: geometry.size.height)
+            .frame(width: displaySize.width, height: displaySize.height)
+            .scaleEffect(state.zoomScale)
+            .offset(x: state.zoomOffset.x, y: state.zoomOffset.y)
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
+            .clipped()
+            .background {
+                ScrollWheelZoomView(state: state)
+            }
             .onAppear {
                 state.canvasSize = baseImageSize
             }
@@ -507,5 +514,58 @@ struct AnnotationCanvas: View {
             let height = containerSize.height
             return CGSize(width: height * aspect, height: height)
         }
+    }
+}
+
+// MARK: - Scroll Wheel Zoom (NSView overlay that captures ⌘+scroll for zoom)
+
+struct ScrollWheelZoomView: NSViewRepresentable {
+    let state: AnnotationState
+
+    func makeNSView(context: Context) -> ScrollWheelNSView {
+        let view = ScrollWheelNSView()
+        view.state = state
+        return view
+    }
+
+    func updateNSView(_ nsView: ScrollWheelNSView, context: Context) {
+        nsView.state = state
+    }
+}
+
+@MainActor
+final class ScrollWheelNSView: NSView {
+    var state: AnnotationState?
+    private var scrollMonitor: Any?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil && scrollMonitor == nil {
+            scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self, let state = self.state else { return event }
+                // Only handle when our window is key
+                guard event.window === self.window else { return event }
+
+                let delta = event.scrollingDeltaY
+                guard abs(delta) > 0.5 else { return event }
+
+                // Pinch-to-zoom (magnify) or ⌘+scroll
+                if event.modifierFlags.contains(.command) {
+                    let factor: CGFloat = delta > 0 ? 1.05 : 0.95
+                    state.zoomScale = max(AnnotationState.zoomMin,
+                                          min(state.zoomScale * factor, AnnotationState.zoomMax))
+                    return nil // consume event
+                }
+                return event
+            }
+        }
+    }
+
+    override func removeFromSuperview() {
+        if let monitor = scrollMonitor {
+            NSEvent.removeMonitor(monitor)
+            scrollMonitor = nil
+        }
+        super.removeFromSuperview()
     }
 }

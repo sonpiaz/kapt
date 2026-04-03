@@ -127,6 +127,57 @@ final class DraggableThumbnailView: NSView, NSDraggingSource, NSPasteboardItemDa
         isDragging = false
     }
 
+    override func rightMouseDown(with event: NSEvent) {
+        let menu = NSMenu()
+
+        let copyItem = NSMenuItem(title: "Copy", action: #selector(copyImage), keyEquivalent: "c")
+        copyItem.target = self
+        menu.addItem(copyItem)
+
+        if fileURL != nil {
+            let revealItem = NSMenuItem(title: "Show in Finder", action: #selector(showInFinder), keyEquivalent: "")
+            revealItem.target = self
+            menu.addItem(revealItem)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+
+        let annotateItem = NSMenuItem(title: "Annotate", action: #selector(annotateImage), keyEquivalent: "")
+        annotateItem.target = self
+        menu.addItem(annotateItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        if fileURL != nil {
+            let deleteItem = NSMenuItem(title: "Delete", action: #selector(deleteImage), keyEquivalent: "")
+            deleteItem.target = self
+            menu.addItem(deleteItem)
+        }
+
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    @objc private func copyImage() {
+        image?.copyToClipboard()
+    }
+
+    @objc private func showInFinder() {
+        guard let fileURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+    }
+
+    @objc private func annotateImage() {
+        snapLog("Thumbnail right-click — Annotate")
+        onClick?()
+    }
+
+    @objc private func deleteImage() {
+        guard let fileURL else { return }
+        try? FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)
+        // Dismiss thumbnail after delete
+        window?.orderOut(nil)
+    }
+
     private func startDraggingSession(with event: NSEvent) {
         guard let image else { return }
 
