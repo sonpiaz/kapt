@@ -4,9 +4,10 @@ import UniformTypeIdentifiers
 
 struct ThumbnailPreviewView: View {
     let image: CGImage
+    let isPaused: Bool
+    let countdownFraction: CGFloat
     @State private var isHovering = false
     @State private var appeared = false
-    @State private var countdown: CGFloat = 1.0
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 0) {
@@ -21,11 +22,12 @@ struct ThumbnailPreviewView: View {
                         .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
                 )
 
-            // Countdown bar
+            // Countdown bar — driven by timer, pauses on hover/drag
             GeometryReader { geo in
                 RoundedRectangle(cornerRadius: 1)
                     .fill(Color.accentColor.opacity(0.6))
-                    .frame(width: geo.size.width * countdown, height: 2)
+                    .frame(width: geo.size.width * countdownFraction, height: 2)
+                    .animation(.linear(duration: 0.1), value: countdownFraction)
             }
             .frame(height: 2)
             .padding(.top, 6)
@@ -54,9 +56,6 @@ struct ThumbnailPreviewView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 appeared = true
             }
-            withAnimation(.linear(duration: 5.0)) {
-                countdown = 0
-            }
         }
     }
 }
@@ -67,16 +66,19 @@ final class DraggableThumbnailView: NSView, NSDraggingSource, NSPasteboardItemDa
     nonisolated(unsafe) var image: CGImage?
     var fileURL: URL?
     var onClick: (() -> Void)?
+    var onHoverChanged: ((Bool) -> Void)?
+    var onDragCompleted: (() -> Void)?
     private var hostingView: NSView?
     private var mouseDownPoint: NSPoint?
     private var isDragging = false
 
-    func setup(image: CGImage, fileURL: URL?, onClick: @escaping () -> Void) {
+    func setup(image: CGImage, fileURL: URL?, isPaused: @escaping () -> Bool, countdownFraction: @escaping () -> CGFloat, onClick: @escaping () -> Void) {
         self.image = image
         self.fileURL = fileURL
         self.onClick = onClick
 
-        let swiftUIView = ThumbnailPreviewView(image: image)
+        // We'll use a wrapper that reads from closures so ThumbnailPanel can drive the state
+        let swiftUIView = ThumbnailPreviewHostView(image: image, isPausedProvider: isPaused, countdownProvider: countdownFraction)
         let hosting = NSHostingView(rootView: swiftUIView)
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
@@ -95,6 +97,28 @@ final class DraggableThumbnailView: NSView, NSDraggingSource, NSPasteboardItemDa
     // Route all mouse events to this view, not the NSHostingView child
     override func hitTest(_ point: NSPoint) -> NSView? {
         return frame.contains(point) ? self : nil
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas {
+            removeTrackingArea(area)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHoverChanged?(false)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -211,7 +235,11 @@ final class DraggableThumbnailView: NSView, NSDraggingSource, NSPasteboardItemDa
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        // no-op: drag uses the saved file on Desktop
+        // Dismiss thumbnail after successful drag-drop
+        if operation != [] {
+            snapLog("Drag completed with operation \(operation.rawValue) — dismissing thumbnail")
+            onDragCompleted?()
+        }
     }
 
     // MARK: - NSPasteboardItemDataProvider
@@ -238,13 +266,47 @@ final class ClickablePanel: NSPanel {
     }
 }
 
+// MARK: - SwiftUI host that bridges closure-based state to ThumbnailPreviewView
+
+struct ThumbnailPreviewHostView: View {
+    let image: CGImage
+    let isPausedProvider: () -> Bool
+    let countdownProvider: () -> CGFloat
+
+    @State private var isPaused = false
+    @State private var countdown: CGFloat = 1.0
+
+    private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        ThumbnailPreviewView(image: image, isPaused: isPaused, countdownFraction: countdown)
+            .onReceive(timer) { _ in
+                isPaused = isPausedProvider()
+                countdown = countdownProvider()
+            }
+    }
+}
+
 @MainActor
 final class ThumbnailPanel {
     private var panel: ClickablePanel?
-    private var autoDismissTask: Task<Void, Never>?
+    private var timerTask: Task<Void, Never>?
+
+    // State for hover-pause & countdown sync
+    private var isHovered = false
+    private var isDragging = false
+    private var remainingSeconds: CGFloat = 5.0
+    private let totalSeconds: CGFloat = 5.0
+
+    private var isPaused: Bool { isHovered || isDragging }
 
     func show(image: CGImage, fileURL: URL? = nil, onClick: @escaping () -> Void) {
         dismiss()
+
+        // Reset countdown state
+        remainingSeconds = totalSeconds
+        isHovered = false
+        isDragging = false
 
         let panel = ClickablePanel(
             contentRect: .zero,
@@ -265,11 +327,31 @@ final class ThumbnailPanel {
         panel.sharingType = .none
 
         let draggableView = DraggableThumbnailView()
-        draggableView.setup(image: image, fileURL: fileURL) { [weak self] in
-            let action = onClick
-            self?.dismiss()
-            action()
+        draggableView.setup(
+            image: image,
+            fileURL: fileURL,
+            isPaused: { [weak self] in self?.isPaused ?? false },
+            countdownFraction: { [weak self] in
+                guard let self else { return 0 }
+                return max(0, self.remainingSeconds / self.totalSeconds)
+            },
+            onClick: { [weak self] in
+                let action = onClick
+                self?.dismiss()
+                action()
+            }
+        )
+
+        // Hook hover events to pause/resume timer
+        draggableView.onHoverChanged = { [weak self] hovering in
+            self?.isHovered = hovering
         }
+
+        // Hook drag-completed to dismiss immediately
+        draggableView.onDragCompleted = { [weak self] in
+            self?.dismiss()
+        }
+
         panel.contentView = draggableView
 
         let panelSize = NSSize(width: 240, height: 170)
@@ -287,17 +369,28 @@ final class ThumbnailPanel {
         panel.orderFrontRegardless()
         self.panel = panel
 
-        autoDismissTask = Task {
-            try? await Task.sleep(for: .seconds(5))
-            if !Task.isCancelled {
-                self.animateDismiss()
+        // Start a tick-based timer that respects pause
+        timerTask = Task { [weak self] in
+            let tickInterval: CGFloat = 0.1
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(tickInterval))
+                guard let self, !Task.isCancelled else { return }
+
+                if !self.isPaused {
+                    self.remainingSeconds -= tickInterval
+                }
+
+                if self.remainingSeconds <= 0 {
+                    self.animateDismiss()
+                    return
+                }
             }
         }
     }
 
     func dismiss() {
-        autoDismissTask?.cancel()
-        autoDismissTask = nil
+        timerTask?.cancel()
+        timerTask = nil
         panel?.orderOut(nil)
         panel = nil
     }
