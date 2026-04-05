@@ -83,6 +83,7 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 ## Related
 
 - [Yap](https://github.com/sonpiaz/yap) — Push-to-talk dictation for macOS
+- [Pheme](https://github.com/sonpiaz/pheme) — AI meeting notes with real-time transcript & auto-summary
 - [hidrix-tools](https://github.com/sonpiaz/hidrix-tools) — MCP server for web & social search
 - [affiliate-skills](https://github.com/Affitor/affiliate-skills) — 45 AI agent skills
 - [content-pipeline](https://github.com/Affitor/content-pipeline) — AI-powered LinkedIn content generation
