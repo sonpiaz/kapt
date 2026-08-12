@@ -63,6 +63,17 @@ cat > "$CONTENTS/Info.plist" << 'PLIST'
 </plist>
 PLIST
 
+# Stable signature so the TCC screen-recording grant survives rebuilds —
+# adhoc/linker-signed binaries get a new cdhash every build, which makes
+# macOS treat each install as a different app and revoke the permission.
+IDENTITY=$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/{print $2; exit}')
+if [ -n "$IDENTITY" ]; then
+    codesign --force --sign "$IDENTITY" "$APP_DIR"
+    echo "✓ Signed as $IDENTITY"
+else
+    echo "⚠  No Developer ID identity — screen-recording permission will reset on every rebuild"
+fi
+
 # Touch to update Spotlight index
 touch "$APP_DIR"
 
