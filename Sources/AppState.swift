@@ -30,6 +30,7 @@ final class AppState {
 
     let captureEngine = CaptureEngine()
     private var thumbnailPanel = ThumbnailPanel()
+    private let captureTray = CaptureTray()
     private var regionSelectionWindow: RegionSelectionWindow?
     private var scrollingController: ScrollingCaptureController?
     private var scrollingHUD: ScrollingCaptureHUD?
@@ -226,9 +227,18 @@ final class AppState {
     // MARK: - Thumbnail Preview (bottom-right)
 
     func showThumbnail(for image: CGImage, fileURL: URL? = nil) {
-        thumbnailPanel.show(image: image, fileURL: fileURL) { [weak self] in
-            self?.openAnnotationEditor(for: image)
-        }
+        thumbnailPanel.show(
+            image: image,
+            fileURL: fileURL,
+            onClick: { [weak self] in
+                self?.openAnnotationEditor(for: image)
+            },
+            onMinimize: { [weak self] in
+                self?.captureTray.park(image: image, fileURL: fileURL) { image in
+                    self?.openAnnotationEditor(for: image)
+                }
+            }
+        )
     }
 
     // MARK: - Annotation Editor
@@ -258,7 +268,7 @@ final class AppState {
 
         let panel = NSPanel(
             contentRect: .zero,
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )

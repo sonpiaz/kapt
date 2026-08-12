@@ -68,18 +68,22 @@ final class DraggableThumbnailView: NSView, NSDraggingSource, NSPasteboardItemDa
     var onClick: (() -> Void)?
     var onHoverChanged: ((Bool) -> Void)?
     var onDragCompleted: (() -> Void)?
+    /// Thumbnail only: park this capture for later editing. Non-nil adds the
+    /// hover-reveal minimize button and the "Minimize — edit later" menu item.
+    var onMinimize: (() -> Void)?
+    /// Chip only: remove me from the tray (Dismiss menu item; also after Delete).
+    var onRemove: (() -> Void)?
     private var hostingView: NSView?
+    private var minimizeButton: NSButton?
     private var mouseDownPoint: NSPoint?
     private var isDragging = false
 
-    func setup(image: CGImage, fileURL: URL?, isPaused: @escaping () -> Bool, countdownFraction: @escaping () -> CGFloat, onClick: @escaping () -> Void) {
+    func setup(image: CGImage, fileURL: URL?, rootView: AnyView, onClick: @escaping () -> Void) {
         self.image = image
         self.fileURL = fileURL
         self.onClick = onClick
 
-        // We'll use a wrapper that reads from closures so ThumbnailPanel can drive the state
-        let swiftUIView = ThumbnailPreviewHostView(image: image, isPausedProvider: isPaused, countdownProvider: countdownFraction)
-        let hosting = NSHostingView(rootView: swiftUIView)
+        let hosting = NSHostingView(rootView: rootView)
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
         NSLayoutConstraint.activate([
@@ -91,11 +95,38 @@ final class DraggableThumbnailView: NSView, NSDraggingSource, NSPasteboardItemDa
         hostingView = hosting
     }
 
+    /// Hover-reveal minimize control, top-right. AppKit button (not SwiftUI)
+    /// because hitTest routes everything else to this view for drag support.
+    func installMinimizeButton() {
+        let button = NSButton(frame: NSRect(x: bounds.width - 30, y: bounds.height - 30, width: 24, height: 24))
+        button.autoresizingMask = [.minXMargin, .minYMargin]
+        button.isBordered = false
+        button.image = NSImage(systemSymbolName: "chevron.down.circle.fill", accessibilityDescription: "Minimize")?
+            .withSymbolConfiguration(.init(pointSize: 16, weight: .semibold))
+        button.contentTintColor = .secondaryLabelColor
+        button.toolTip = "Minimize — edit later"
+        button.target = self
+        button.action = #selector(minimizeTapped)
+        button.isHidden = true
+        addSubview(button)
+        minimizeButton = button
+    }
+
+    @objc private func minimizeTapped() {
+        snapLog("Thumbnail minimize tapped — parking capture")
+        onMinimize?()
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
-    // Route all mouse events to this view, not the NSHostingView child
+    // Route all mouse events to this view, not the NSHostingView child —
+    // except the minimize button, which keeps its own click handling.
     override func hitTest(_ point: NSPoint) -> NSView? {
+        if let button = minimizeButton, !button.isHidden,
+           button.frame.contains(convert(point, from: superview)) {
+            return button
+        }
         return frame.contains(point) ? self : nil
     }
 
@@ -115,10 +146,12 @@ final class DraggableThumbnailView: NSView, NSDraggingSource, NSPasteboardItemDa
 
     override func mouseEntered(with event: NSEvent) {
         onHoverChanged?(true)
+        minimizeButton?.isHidden = false
     }
 
     override func mouseExited(with event: NSEvent) {
         onHoverChanged?(false)
+        minimizeButton?.isHidden = true
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -170,6 +203,18 @@ final class DraggableThumbnailView: NSView, NSDraggingSource, NSPasteboardItemDa
         annotateItem.target = self
         menu.addItem(annotateItem)
 
+        if onMinimize != nil {
+            let minimizeItem = NSMenuItem(title: "Minimize — Edit Later", action: #selector(minimizeTapped), keyEquivalent: "")
+            minimizeItem.target = self
+            menu.addItem(minimizeItem)
+        }
+
+        if onRemove != nil {
+            let dismissItem = NSMenuItem(title: "Dismiss", action: #selector(dismissChip), keyEquivalent: "")
+            dismissItem.target = self
+            menu.addItem(dismissItem)
+        }
+
         menu.addItem(NSMenuItem.separator())
 
         if fileURL != nil {
@@ -195,11 +240,19 @@ final class DraggableThumbnailView: NSView, NSDraggingSource, NSPasteboardItemDa
         onClick?()
     }
 
+    @objc private func dismissChip() {
+        onRemove?()
+    }
+
     @objc private func deleteImage() {
         guard let fileURL else { return }
         try? FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)
-        // Dismiss thumbnail after delete
-        window?.orderOut(nil)
+        // Dismiss after delete: chips leave through the tray, the thumbnail hides
+        if let onRemove {
+            onRemove()
+        } else {
+            window?.orderOut(nil)
+        }
     }
 
     private func startDraggingSession(with event: NSEvent) {
@@ -300,7 +353,7 @@ final class ThumbnailPanel {
 
     private var isPaused: Bool { isHovered || isDragging }
 
-    func show(image: CGImage, fileURL: URL? = nil, onClick: @escaping () -> Void) {
+    func show(image: CGImage, fileURL: URL? = nil, onClick: @escaping () -> Void, onMinimize: (() -> Void)? = nil) {
         dismiss()
 
         // Reset countdown state
@@ -327,14 +380,18 @@ final class ThumbnailPanel {
         panel.sharingType = .none
 
         let draggableView = DraggableThumbnailView()
+        let hostView = ThumbnailPreviewHostView(
+            image: image,
+            isPausedProvider: { [weak self] in self?.isPaused ?? false },
+            countdownProvider: { [weak self] in
+                guard let self else { return 0 }
+                return max(0, self.remainingSeconds / self.totalSeconds)
+            }
+        )
         draggableView.setup(
             image: image,
             fileURL: fileURL,
-            isPaused: { [weak self] in self?.isPaused ?? false },
-            countdownFraction: { [weak self] in
-                guard let self else { return 0 }
-                return max(0, self.remainingSeconds / self.totalSeconds)
-            },
+            rootView: AnyView(hostView),
             onClick: { [weak self] in
                 let action = onClick
                 self?.dismiss()
@@ -345,6 +402,15 @@ final class ThumbnailPanel {
         // Hook hover events to pause/resume timer
         draggableView.onHoverChanged = { [weak self] hovering in
             self?.isHovered = hovering
+        }
+
+        // Park for later: dismiss the countdown thumbnail, hand off to the tray
+        if let onMinimize {
+            draggableView.onMinimize = { [weak self] in
+                self?.dismiss()
+                onMinimize()
+            }
+            draggableView.installMinimizeButton()
         }
 
         // Hook drag-completed to dismiss immediately
