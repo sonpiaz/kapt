@@ -85,9 +85,10 @@ final class AppState {
                 if let image = capturedImage {
                     snapLog("Capture success: \(image.width)x\(image.height)")
                     let savedURL = saveToDesktop(image)
-                    let autoCopy = UserDefaults.standard.bool(forKey: "autoCopy")
-                    if autoCopy { image.copyToClipboard() }
-                    snapLog("Saved\(autoCopy ? " and copied to clipboard" : "")")
+                    if UserDefaults.standard.bool(forKey: "autoCopy") {
+                        image.copyToClipboard()
+                        snapLog("Copied to clipboard")
+                    }
                     showThumbnail(for: image, fileURL: savedURL)
                 } else {
                     snapLog("Capture returned nil image")
@@ -320,24 +321,56 @@ final class AppState {
 
     // MARK: - Save
 
+    /// Saves into the folder chosen in Preferences (relative to home).
     @discardableResult
     func saveToDesktop(_ image: CGImage) -> URL? {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
-        let filename = "Kapt \(formatter.string(from: Date())).png"
         let folder = UserDefaults.standard.string(forKey: "saveLocation") ?? "Desktop"
-        let desktopURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(folder)
-            .appendingPathComponent(filename)
+        let directory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(folder, isDirectory: true)
+        let location = (directory.path as NSString).abbreviatingWithTildeInPath
 
         do {
-            try image.savePNG(to: desktopURL)
-            lastSaveURL = desktopURL
-            statusMessage = "Saved to Desktop"
-            return desktopURL
+            let url = try image.savePNG(into: directory)
+            lastSaveURL = url
+            statusMessage = "Saved to \(location)"
+            snapLog("Saved to \(url.path)")
+            return url
         } catch {
             statusMessage = "Save failed: \(error.localizedDescription)"
+            snapLog("Save failed in \(directory.path): \(error)")
+            presentSaveFailure(image: image, location: location, error: error)
             return nil
+        }
+    }
+}
+
+/// A failed save must never pass silently — the menu bar status is easy to
+/// miss — so raise an alert and offer to save the image somewhere else.
+@MainActor
+func presentSaveFailure(image: CGImage, location: String, error: Error) {
+    let message = error.localizedDescription
+    // Deferred so the clipboard copy and thumbnail land before the modal opens
+    Task { @MainActor in
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Screenshot not saved"
+        alert.informativeText = "Kapt couldn't save to \(location).\n\n\(message)"
+        alert.addButton(withTitle: "Save As…")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = CGImage.captureFilename()
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try image.savePNG(to: url)
+            snapLog("Saved via Save As to \(url.path)")
+        } catch {
+            snapLog("Save As failed for \(url.path): \(error)")
+            let folder = (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
+            presentSaveFailure(image: image, location: folder, error: error)
         }
     }
 }
