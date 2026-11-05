@@ -52,7 +52,12 @@ struct AnnotationEditorView: View {
         panel.nameFieldStringValue = "Kapt Annotated.png"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            try? image.savePNG(to: url)
+            do {
+                try image.savePNG(to: url)
+            } catch {
+                let folder = (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
+                presentSaveFailure(image: image, location: folder, error: error)
+            }
         }
     }
 }
